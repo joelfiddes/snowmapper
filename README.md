@@ -1,0 +1,2 @@
+# snowmapper
+Snow forecasting pipeline
