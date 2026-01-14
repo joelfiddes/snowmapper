@@ -9,7 +9,6 @@ from rasterio.enums import Resampling
 from rasterio.transform import rowcol
 import numpy as np
 import sys
-import upload as s3
 import glob
 from tqdm import tqdm
 from logging_utils import setup_logger_with_tqdm, get_log_dir
@@ -47,18 +46,10 @@ def write_mosaic_to_netcdf(mosaic, transform, crs, output_filename, var_name, lo
 
 mydir = sys.argv[1]
 mydomain = sys.argv[2]
-upload_to_aws = sys.argv[3]
 
 # Set up logging
 log_dir = get_log_dir(f"{mydir}/{mydomain}")
 logger = setup_logger_with_tqdm("merge_reproj", file=False)
-
-logger.info(f"upload_to_aws = {upload_to_aws}")
-SNOW_MODEL = "joel-snow-model"
-SNOW_MODEL_BUCKET = "snow-model-data-source"
-PARAMETERS = ["HS", "SWE"]
-aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
-aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
 
 #year= sys.argv[1]
 startTime = datetime.now()
@@ -160,16 +151,6 @@ for time_idx, time_value in enumerate(tqdm(ds1.Time.values, desc="Processing SWE
         os.remove(file)
 
 
-    if upload_to_aws == True:
-        parameter = "SWE"
-        s3_path = s3.get_file_path(formatted_date, parameter)
-        success = s3.upload_file(output_filename_nc, SNOW_MODEL_BUCKET, s3_path, aws_access_key_id, aws_secret_access_key)
-
-        if success:
-            logger.info(f"{variable_name} uploaded to {s3_path}")
-        else:
-            logger.error(f"{variable_name} upload failed to {s3_path}")
-
 #========== HS computation ====================================================
 
 
@@ -247,15 +228,6 @@ for time_idx, time_value in enumerate(tqdm(ds1.Time.values, desc="Processing HS"
         os.remove(file)
 
 
-    if upload_to_aws== True:
-        parameter = "HS"
-        s3_path = s3.get_file_path(formatted_date, parameter)
-        success = s3.upload_file(output_filename_nc, SNOW_MODEL_BUCKET, s3_path, aws_access_key_id, aws_secret_access_key)
-
-        if success:
-            logger.info(f"{variable_name} uploaded to {s3_path}")
-        else:
-            logger.error(f"{variable_name} upload failed to {s3_path}")
 
 
 
@@ -338,12 +310,3 @@ for time_idx, time_value in enumerate(tqdm(ds1.Time.values, desc="Processing ROF
         os.remove(file)
 
 
-    if upload_to_aws== True:
-        parameter = "ROF"
-        s3_path = s3.get_file_path(formatted_date, parameter)
-        success = s3.upload_file(output_filename_nc, SNOW_MODEL_BUCKET, s3_path, aws_access_key_id, aws_secret_access_key)
-
-        if success:
-            logger.info(f"{variable_name} uploaded to {s3_path}")
-        else:
-            logger.error(f"{variable_name} upload failed to {s3_path}")
