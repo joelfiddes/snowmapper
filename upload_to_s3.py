@@ -1,4 +1,4 @@
-import upload as s3
+import s3_utils as s3
 from TopoPyScale import fetch_era5 as fe
 import boto3
 from logging_utils import setup_logger_with_tqdm
