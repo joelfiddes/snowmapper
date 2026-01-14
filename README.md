@@ -103,13 +103,148 @@ bash pipeline.sh DEBUG
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed setup instructions.
 
-## Configuration
+## Setting Up a New Simulation
 
-Each domain requires a `config.yml` defining:
-- Geographic extent and DEM settings
-- TopoSUB clustering parameters
-- Climate data paths
-- TopoPyScale interpolation methods
+### 1. Create Simulation Directory Structure
+
+```bash
+mkdir -p my_simulation/{master,D2000}/{inputs/dem,inputs/basins}
+mkdir -p my_simulation/{logs,spatial,tables}
+cd my_simulation
+```
+
+### 2. Copy Pipeline Script
+
+```bash
+cp /path/to/snowmapper/pipeline.sh .
+# Edit pipeline.sh to update paths if needed
+```
+
+### 3. Configure Master Domain
+
+The master domain downloads ERA5 climate data shared by other domains.
+
+Create `master/config.yml`:
+```yaml
+project:
+    name: master
+    description: Master domain for ERA5 download
+    directory: /path/to/my_simulation/master/
+    start: 2024-09-01          # Water year start
+    end: 2024-12-31            # Will be updated automatically
+    extent: [lat_max, lat_min, lon_min, lon_max]  # Bounding box
+    climate: era5
+
+climate:
+    era5:
+        path: ./inputs/climate/
+        product: reanalysis
+        timestep: 1H
+        plevels: [300, 400, 500, 600, 700, 850, 925, 1000]
+        realtime: True
+        output_format: netcdf
+
+dem:
+    file: dem.tif
+    epsg: 32642               # UTM zone for your region
+    horizon_increments: 45
+    dem_resol: 500
+
+sampling:
+    method: toposub
+    toposub:
+        clustering_method: minibatchkmean
+        n_clusters: 300       # Number of TopoSUB clusters
+        random_seed: 2
+        clustering_features: {'x':1, 'y':1, 'elevation':1, 'slope':1, 'aspect_cos':1, 'aspect_sin':1, 'svf':1}
+
+toposcale:
+    interpolation_method: idw
+    LW_terrain_contribution: True
+```
+
+### 4. Configure Processing Domain
+
+The processing domain (e.g., D2000) runs FSM simulations using climate from master.
+
+Create `D2000/config.yml`:
+```yaml
+project:
+    name: D2000
+    description: High-resolution processing domain
+    directory: /path/to/my_simulation/D2000/
+    start: 2024-09-01
+    end: 2024-12-31
+    extent: [lat_max, lat_min, lon_min, lon_max]  # Can be subset of master
+    climate: era5
+
+climate:
+    era5:
+        path: /path/to/my_simulation/master/inputs/climate/  # Points to master
+        product: reanalysis
+        timestep: 1H
+        plevels: [300, 400, 500, 600, 700, 850, 925, 1000]
+        realtime: False
+        output_format: grib
+
+dem:
+    file: dem_500m.tif
+    epsg: 32642
+    horizon_increments: 45
+    dem_resol: 500
+
+sampling:
+    method: toposub
+    toposub:
+        clustering_method: minibatchkmean
+        n_clusters: 2000      # Higher resolution clustering
+        random_seed: 2
+        clustering_features: {'x':1, 'y':1, 'elevation':1, 'slope':1, 'aspect_cos':1, 'aspect_sin':1, 'svf':1}
+```
+
+### 5. Add Required Input Files
+
+```bash
+# DEM (GeoTIFF in projected CRS)
+cp your_dem.tif D2000/inputs/dem/
+
+# Basin shapefiles for statistics (optional)
+cp basins.shp basins.shx basins.dbf D2000/inputs/basins/
+
+# FSM binary
+cp /path/to/FSM D2000/FSM
+chmod +x D2000/FSM
+```
+
+### 6. Set Up API Credentials
+
+```bash
+# CDS API for ERA5 (~/.cdsapirc)
+echo "url: https://cds.climate.copernicus.eu/api/v2
+key: YOUR_UID:YOUR_API_KEY" > ~/.cdsapirc
+
+# ECMWF API for IFS forecast (~/.ecmwfapirc)
+echo '{"url": "https://api.ecmwf.int/v1", "key": "YOUR_KEY", "email": "your@email.com"}' > ~/.ecmwfapirc
+```
+
+### 7. Run Pipeline
+
+```bash
+conda activate downscaling
+bash pipeline.sh
+```
+
+On first run, `init_domain.py` and `run_archive_sim.py` will initialize the domain. Subsequent runs skip initialization if `sim_archive/HS.nc` exists.
+
+## Configuration Reference
+
+Each domain requires a `config.yml` (TopoPyScale format) defining:
+- **project.extent**: Geographic bounding box `[lat_max, lat_min, lon_min, lon_max]`
+- **project.start/end**: Simulation time range (water year)
+- **climate.era5.path**: Path to ERA5 data (master downloads, others reference)
+- **dem.file**: DEM filename in `inputs/dem/`
+- **dem.epsg**: Projected coordinate system (UTM recommended)
+- **sampling.toposub.n_clusters**: Number of landscape clusters (more = higher resolution)
 
 ## Typical Runtime
 
