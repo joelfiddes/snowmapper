@@ -127,4 +127,4 @@ Each domain requires a `config.yml` defining:
 
 ## License
 
-MIT
+GNU General Public License v3.0
