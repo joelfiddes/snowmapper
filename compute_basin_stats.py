@@ -108,7 +108,7 @@ date_column = results_df['Date']
 
 df_no_date = results_df.drop(columns=['Date'])
 # Group columns by their names and calculate the average
-averages = df_no_date.groupby(df_no_date.columns, axis=1).mean()
+averages = df_no_date.T.groupby(df_no_date.columns).mean().T
 
 # Concatenate the 'Date' column with the resulting DataFrame
 out = pd.concat([date_column, averages], axis=1)
@@ -172,7 +172,7 @@ date_column = results_df['Date']
 
 df_no_date = results_df.drop(columns=['Date'])
 # Group columns by their names and calculate the average
-averages = df_no_date.groupby(df_no_date.columns, axis=1).mean()
+averages = df_no_date.T.groupby(df_no_date.columns).mean().T
 
 # Concatenate the 'Date' column with the resulting DataFrame
 out = pd.concat([date_column, averages], axis=1)
@@ -238,7 +238,7 @@ date_column = results_df['Date']
 
 df_no_date = results_df.drop(columns=['Date'])
 # Group columns by their names and calculate the average
-averages = df_no_date.groupby(df_no_date.columns, axis=1).mean()
+averages = df_no_date.T.groupby(df_no_date.columns).mean().T
 
 # Concatenate the 'Date' column with the resulting DataFrame
 out = pd.concat([date_column, averages], axis=1)

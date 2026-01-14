@@ -113,14 +113,14 @@ def concat_fsm_with_overwrite(mydir):
 
         # If archive file exists, load it into a DataFrame (space-delimited, no header)
         if os.path.exists(archive_file):
-            archive_df = pd.read_csv(archive_file, delim_whitespace=True, header=None)
+            archive_df = pd.read_csv(archive_file, sep=r'\s+', header=None)
             # Create a temporary datetime column for merging, but don't keep it in the final output
             archive_df['time'] = pd.to_datetime(archive_df.iloc[:, [0, 1, 2, 3]].rename(columns={0: 'year', 1: 'month', 2: 'day', 3: 'hour'}))
             combined_df = archive_df
         
         # If latest file exists, load it and overwrite overlapping data
         if os.path.exists(latest_file):
-            latest_df = pd.read_csv(latest_file, delim_whitespace=True, header=None)
+            latest_df = pd.read_csv(latest_file, sep=r'\s+', header=None)
             # Create a temporary datetime column for merging, but don't keep it in the final output
             latest_df['time'] = pd.to_datetime(latest_df.iloc[:, [0, 1, 2, 3]].rename(columns={0: 'year', 1: 'month', 2: 'day', 3: 'hour'}))
             
