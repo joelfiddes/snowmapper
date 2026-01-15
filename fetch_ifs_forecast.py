@@ -406,7 +406,16 @@ def merge_all_forecasts(tmp_path):
 if __name__ == "__main__":
     logger.info("Starting IFS forecast fetch")
 
-    directory_path = './master/inputs/climate/forecast/'
+    # Try to load config from snowmapper.yml
+    try:
+        from config import load_config
+        cfg = load_config()
+        directory_path = os.path.join(cfg['paths']['climate_dir'], 'forecast')
+        logger.info(f"Using config climate_dir: {cfg['paths']['climate_dir']}")
+    except (FileNotFoundError, ImportError):
+        # Fall back to default path (new structure)
+        directory_path = './inputs/climate/forecast/'
+        logger.info("No snowmapper.yml found, using default path")
 
     if not os.path.exists(directory_path):
         os.makedirs(directory_path)

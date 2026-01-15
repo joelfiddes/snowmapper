@@ -829,8 +829,10 @@ def main():
     missing_days = get_missing_era5_days(str(mp.config.climate.path), lastday)
     download_missing_era5_days(mp, missing_days)
 
-    data_dir = "./inputs/climate/forecast"
-    out_dir = "./inputs/climate"
+    # Use climate path from domain config
+    climate_path = str(mp.config.climate.era5.path)
+    data_dir = os.path.join(climate_path, "forecast")
+    out_dir = climate_path
     # List of files to remove if they exist
     files_to_remove = [
         os.path.join(out_dir, "SURF_final_merged_output.nc"),

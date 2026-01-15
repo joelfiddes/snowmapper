@@ -164,7 +164,9 @@ def main(mydir):
 
 
     # Get the last timestamp of last forecast day
-    nc_file = f'../master/inputs/climate/SURF_final_merged_output.nc'
+    # Use climate path from domain config
+    climate_path = mp.config.climate.era5.path
+    nc_file = os.path.join(climate_path, 'SURF_final_merged_output.nc')
     last_timestamp = get_last_fullday_timestamp(nc_file)
 
     logger.info(f"Simulation period: {first_timestamp.strftime('%Y-%m-%d')} to {last_timestamp}")

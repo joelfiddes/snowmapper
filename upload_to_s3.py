@@ -6,14 +6,25 @@ from logging_utils import setup_logger_with_tqdm
 # Set up logging
 logger = setup_logger_with_tqdm("upload_aws", file=False)
 
+# Try to load paths from snowmapper.yml config
+try:
+    from config import load_config
+    cfg = load_config()
+    spatial_directory = cfg['paths']['spatial_dir'] + "/"
+    SNOW_MODEL_BUCKET = cfg['upload'].get('s3_bucket', 'snow-model-data-source')
+    logger.info(f"Using config paths: spatial={spatial_directory}")
+except (FileNotFoundError, ImportError):
+    # Fall back to default paths (new structure)
+    spatial_directory = "./spatial/"
+    SNOW_MODEL_BUCKET = "snow-model-data-source"
+    logger.info("No snowmapper.yml found, using default paths")
+
 # Use default profile credentials
 session = boto3.Session()
 credentials = session.get_credentials().get_frozen_credentials()
 SNOW_MODEL = "joel-snow-model"
-SNOW_MODEL_BUCKET = "snow-model-data-source"
 aws_access_key_id = credentials.access_key
 aws_secret_access_key = credentials.secret_key
-spatial_directory = "./spatial/"
 
 
 # Todays era5 file (6days ago)

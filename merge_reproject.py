@@ -54,13 +54,11 @@ logger = setup_logger_with_tqdm("merge_reproj", file=False)
 #year= sys.argv[1]
 startTime = datetime.now()
 thismonth = startTime.month    # now
-thisyear = startTime.year 
+thisyear = startTime.year
 year = [thisyear if thismonth in {9, 10, 11, 12} else thisyear-1][0]
 fileyear = year+1
 
 logger.info(f"Water year: {fileyear}")
-
-# Define the target projection as longitude and latitude
 
 # Define the target projection as longitude and latitude
 target_projection = 'EPSG:4326'  # EPSG code for WGS 84 coordinate system (longitude and latitude)
@@ -71,14 +69,8 @@ target_projection = 'EPSG:4326'  # EPSG code for WGS 84 coordinate system (longi
 
 # Directory containing merged reprojected files
 spatial_directory = mydir + "/spatial/"
-os.makedirs(spatial_directory, exist_ok=True) 
-# Loop over years
- # Adjust the range according to your desired years
-# Load the NetCDF files for each year
+os.makedirs(spatial_directory, exist_ok=True)
 
-# file1 = f"./myproject/D1/outputs/*_SWE.nc"
-# file2 = f"./myproject/D2/outputs/*_SWE.nc"
-# file3 = f"./myproject/D3/outputs/*_SWE.nc"
 variable_name ="SWE"
 filep1 =    f"{mydir}/{mydomain}/outputs/*_{variable_name}.nc"
 file1 = glob.glob(filep1)
@@ -88,24 +80,22 @@ file1 = glob.glob(filep1)
 ds1 = xr.open_dataset(file1[0])
 
 
-# Loop through each timestep (change this loop to re run entire last three months
+# Loop through each timestep
 for time_idx, time_value in enumerate(tqdm(ds1.Time.values, desc="Processing SWE")):
 
     formatted_date = np.datetime_as_string(time_value, unit='D')
     # Now format as YYYYMMDD
     formatted_date = formatted_date.replace('-', '')
 
-    # Construct output filename
+    # Construct output filename (NetCDF only)
     output_filename_nc = spatial_directory+f'SWE_{formatted_date}.nc'
-    output_filename_tif = spatial_directory+f'swe_merged_reprojected_{year}_{time_idx}.tif'
 
-    if os.path.exists(output_filename_tif):
-        logger.debug(f"File {output_filename_tif} already exists. Skipping.")
+    if os.path.exists(output_filename_nc):
+        logger.debug(f"File {output_filename_nc} already exists. Skipping.")
         continue
 
     # Select data for the current timestep
     ds1_slice = ds1.isel(Time=time_idx)
-
 
     # Set spatial dimensions
     ds1_slice = ds1_slice.rename({'easting': 'x','northing': 'y'})
@@ -114,14 +104,14 @@ for time_idx, time_value in enumerate(tqdm(ds1.Time.values, desc="Processing SWE
     # Reproject ds1 to latitude and longitude
     ds1_latlon = ds1_slice.rio.reproject(target_projection)
 
-    # Define output filenames
+    # Define temporary output filename
     output_filename_ds1 = f'ds1_reprojected_{year}_{time_idx}.tif'
 
-    # Write reprojected datasets to GeoTIFF files
+    # Write reprojected datasets to temporary GeoTIFF
     ds1_latlon.rio.to_raster(output_filename_ds1)
 
     # List of filenames of GeoTIFF files to merge
-    file_list = [output_filename_ds1]  # Add more filenames as needed
+    file_list = [output_filename_ds1]
 
     # Open each GeoTIFF file
     src_files_to_mosaic = [rasterio.open(file) for file in file_list]
@@ -129,34 +119,20 @@ for time_idx, time_value in enumerate(tqdm(ds1.Time.values, desc="Processing SWE
     # Merge the raster datasets
     mosaic, out_trans = merge(src_files_to_mosaic, resampling=Resampling.cubic)
 
-    if os.path.exists(output_filename_tif):
-        logger.debug(f"File {output_filename_tif} already exists. Skipping.")
-        continue
-
-    # Write the merged raster to a new GeoTIFF file
-    with rasterio.open(output_filename_tif, 'w', driver='GTiff',
-                               width=mosaic.shape[2], height=mosaic.shape[1],
-                               count=mosaic.shape[0], dtype=mosaic.dtype,
-                               crs=src_files_to_mosaic[0].crs, transform=out_trans) as dest:
-        dest.write(mosaic)
-
-
     # Write NetCDF using xarray
     write_mosaic_to_netcdf(mosaic, out_trans, src_files_to_mosaic[0].crs,
                            output_filename_nc, 'swe', 'snow_water_equivalent', 'mm', '500')
 
+    # Close rasterio files before deletion
+    for src in src_files_to_mosaic:
+        src.close()
 
-    # Delete input raster files
+    # Delete temporary raster files
     for file in file_list:
         os.remove(file)
 
 
 #========== HS computation ====================================================
-
-
-# Loop over years
- # Adjust the range according to your desired years
-# Load the NetCDF files for each year
 
 variable_name ="HS"
 filep1 =    f"{mydir}/{mydomain}/outputs/*_{variable_name}.nc"
@@ -173,34 +149,31 @@ for time_idx, time_value in enumerate(tqdm(ds1.Time.values, desc="Processing HS"
     # Now format as YYYYMMDD
     formatted_date = formatted_date.replace('-', '')
 
-    # Construct output filename
+    # Construct output filename (NetCDF only)
     output_filename_nc = spatial_directory+f'HS_{formatted_date}.nc'
-    output_filename_tif = spatial_directory+f'hs_merged_reprojected_{year}_{time_idx}.tif'
 
-    if os.path.exists(output_filename_tif):
-        logger.debug(f"File {output_filename_tif} already exists. Skipping.")
+    if os.path.exists(output_filename_nc):
+        logger.debug(f"File {output_filename_nc} already exists. Skipping.")
         continue
 
     # Select data for the current timestep
     ds1_slice = ds1.isel(Time=time_idx)
 
-
     # Set spatial dimensions
     ds1_slice = ds1_slice.rename({'easting': 'x','northing': 'y'})
     ds1_slice = ds1_slice.rio.write_crs(pyproj.CRS.from_epsg(32642).to_wkt())
 
-
     # Reproject ds1 to latitude and longitude
     ds1_latlon = ds1_slice.rio.reproject(target_projection)
 
-    # Define output filenames
+    # Define temporary output filename
     output_filename_ds1 = f'ds1_reprojected_{year}_{time_idx}.tif'
 
-    # Write reprojected datasets to GeoTIFF files
+    # Write reprojected datasets to temporary GeoTIFF
     ds1_latlon.rio.to_raster(output_filename_ds1)
 
     # List of filenames of GeoTIFF files to merge
-    file_list = [output_filename_ds1]  # Add more filenames as needed
+    file_list = [output_filename_ds1]
 
     # Open each GeoTIFF file
     src_files_to_mosaic = [rasterio.open(file) for file in file_list]
@@ -208,37 +181,20 @@ for time_idx, time_value in enumerate(tqdm(ds1.Time.values, desc="Processing HS"
     # Merge the raster datasets
     mosaic, out_trans = merge(src_files_to_mosaic, resampling=Resampling.cubic)
 
-    if os.path.exists(output_filename_tif):
-        logger.debug(f"File {output_filename_tif} already exists. Skipping.")
-        continue
-
-    # Write the merged raster to a new GeoTIFF file
-    with rasterio.open(output_filename_tif, 'w', driver='GTiff',
-                       width=mosaic.shape[2], height=mosaic.shape[1],
-                       count=mosaic.shape[0], dtype=mosaic.dtype,
-                       crs=src_files_to_mosaic[0].crs, transform=out_trans) as dest:
-        dest.write(mosaic)
-
     # Write NetCDF using xarray
     write_mosaic_to_netcdf(mosaic, out_trans, src_files_to_mosaic[0].crs,
                            output_filename_nc, 'hs', 'snow_height', 'm', '500')
 
-    # Delete input raster files
+    # Close rasterio files before deletion
+    for src in src_files_to_mosaic:
+        src.close()
+
+    # Delete temporary raster files
     for file in file_list:
         os.remove(file)
 
 
-
-
-
-
-
 #========== ROF computation ====================================================
-
-
-# Loop over years
- # Adjust the range according to your desired years
-# Load the NetCDF files for each year
 
 variable_name ="ROF"
 filep1 =    f"{mydir}/{mydomain}/outputs/*_{variable_name}.nc"
@@ -255,34 +211,31 @@ for time_idx, time_value in enumerate(tqdm(ds1.Time.values, desc="Processing ROF
     # Now format as YYYYMMDD
     formatted_date = formatted_date.replace('-', '')
 
-    # Construct output filename
+    # Construct output filename (NetCDF only)
     output_filename_nc = spatial_directory+f'ROF_{formatted_date}.nc'
-    output_filename_tif = spatial_directory+f'ROF_merged_reprojected_{year}_{time_idx}.tif'
 
-    if os.path.exists(output_filename_tif):
-        logger.debug(f"File {output_filename_tif} already exists. Skipping.")
+    if os.path.exists(output_filename_nc):
+        logger.debug(f"File {output_filename_nc} already exists. Skipping.")
         continue
 
     # Select data for the current timestep
     ds1_slice = ds1.isel(Time=time_idx)
 
-
     # Set spatial dimensions
     ds1_slice = ds1_slice.rename({'easting': 'x','northing': 'y'})
     ds1_slice = ds1_slice.rio.write_crs(pyproj.CRS.from_epsg(32642).to_wkt())
 
-
     # Reproject ds1 to latitude and longitude
     ds1_latlon = ds1_slice.rio.reproject(target_projection)
 
-    # Define output filenames
+    # Define temporary output filename
     output_filename_ds1 = f'ds1_reprojected_{year}_{time_idx}.tif'
 
-    # Write reprojected datasets to GeoTIFF files
+    # Write reprojected datasets to temporary GeoTIFF
     ds1_latlon.rio.to_raster(output_filename_ds1)
 
     # List of filenames of GeoTIFF files to merge
-    file_list = [output_filename_ds1]  # Add more filenames as needed
+    file_list = [output_filename_ds1]
 
     # Open each GeoTIFF file
     src_files_to_mosaic = [rasterio.open(file) for file in file_list]
@@ -290,23 +243,14 @@ for time_idx, time_value in enumerate(tqdm(ds1.Time.values, desc="Processing ROF
     # Merge the raster datasets
     mosaic, out_trans = merge(src_files_to_mosaic, resampling=Resampling.cubic)
 
-    if os.path.exists(output_filename_tif):
-        logger.debug(f"File {output_filename_tif} already exists. Skipping.")
-        continue
-
-    # Write the merged raster to a new GeoTIFF file
-    with rasterio.open(output_filename_tif, 'w', driver='GTiff',
-                       width=mosaic.shape[2], height=mosaic.shape[1],
-                       count=mosaic.shape[0], dtype=mosaic.dtype,
-                       crs=src_files_to_mosaic[0].crs, transform=out_trans) as dest:
-        dest.write(mosaic)
-
     # Write NetCDF using xarray
     write_mosaic_to_netcdf(mosaic, out_trans, src_files_to_mosaic[0].crs,
                            output_filename_nc, 'rof', 'snow_runoff', 'mm', '500')
 
-    # Delete input raster files
+    # Close rasterio files before deletion
+    for src in src_files_to_mosaic:
+        src.close()
+
+    # Delete temporary raster files
     for file in file_list:
         os.remove(file)
-
-

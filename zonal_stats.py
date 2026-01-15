@@ -1,16 +1,23 @@
 import pandas as pd
 import numpy as np
+import os
 from datetime import datetime, timedelta
 
-
-
+# Try to load paths from snowmapper.yml config
+try:
+    from config import load_config
+    cfg = load_config()
+    tables_dir = cfg['paths']['tables_dir']
+except (FileNotFoundError, ImportError):
+    # Fall back to default path (new structure)
+    tables_dir = "./tables"
 
 # ==============================================================================
 # CATCHMENT STATISTICS
 # ==============================================================================
 
 # Read the swedata
-data = pd.read_csv("./tables/swe_mean_values_table.csv")
+data = pd.read_csv(os.path.join(tables_dir, "swe_mean_values_table.csv"))
         
 # Assuming the first column is 'Date' and the rest are catchment codes
 catchments = data.columns[1:]
@@ -20,7 +27,7 @@ catchments = data.columns[1:]
 for catchment in catchments:
 
         # Read the swedata
-        data = pd.read_csv("./tables/swe_mean_values_table.csv")
+        data = pd.read_csv(os.path.join(tables_dir, "swe_mean_values_table.csv"))
         
         # Assuming the first column is 'Date' and the rest are catchment codes
         catchments = data.columns[1:]
@@ -56,7 +63,7 @@ for catchment in catchments:
 
 
         # Read the hs data
-        data = pd.read_csv("./tables/hs_mean_values_table.csv")
+        data = pd.read_csv(os.path.join(tables_dir, "hs_mean_values_table.csv"))
         
         # Assuming the first column is 'Date' and the rest are catchment codes
         catchments = data.columns[1:]
@@ -97,7 +104,7 @@ for catchment in catchments:
 
 
         # Read the rof data
-        data = pd.read_csv("./tables/rof_mean_values_table.csv")
+        data = pd.read_csv(os.path.join(tables_dir, "rof_mean_values_table.csv"))
 
         # Assuming the first column is 'Date' and the rest are catchment codes
         catchments = data.columns[1:]
@@ -137,7 +144,7 @@ for catchment in catchments:
         modified_quantiles.set_index('date', inplace=True, drop=False)
 
         # Write the final output
-        filename = f"./tables/{catchment}_current.txt"
+        filename = os.path.join(tables_dir, f"{catchment}_current.txt")
         modified_quantiles = modified_quantiles.drop(columns=['index'])
 
 
@@ -170,7 +177,7 @@ for catchment in catchments:
 # ==============================================================================
 
 # Read the swedata
-data = pd.read_csv("./tables/swe_basin_mean_values_table.csv")
+data = pd.read_csv(os.path.join(tables_dir, "swe_basin_mean_values_table.csv"))
         
 # Assuming the first column is 'Date' and the rest are catchment codes
 catchments = data.columns[1:]
@@ -180,7 +187,7 @@ catchments = data.columns[1:]
 for catchment in catchments:
 
         # Read the swedata
-        data = pd.read_csv("./tables/swe_basin_mean_values_table.csv")
+        data = pd.read_csv(os.path.join(tables_dir, "swe_basin_mean_values_table.csv"))
         
         # Assuming the first column is 'Date' and the rest are catchment codes
         catchments = data.columns[1:]
@@ -216,7 +223,7 @@ for catchment in catchments:
 
 
         # Read the swedata
-        data = pd.read_csv("./tables/hs_basin_mean_values_table.csv")
+        data = pd.read_csv(os.path.join(tables_dir, "hs_basin_mean_values_table.csv"))
         
         # Assuming the first column is 'Date' and the rest are catchment codes
         catchments = data.columns[1:]
@@ -248,7 +255,7 @@ for catchment in catchments:
 
 
         # Read the rof data
-        data = pd.read_csv("./tables/rof_basin_mean_values_table.csv")
+        data = pd.read_csv(os.path.join(tables_dir, "rof_basin_mean_values_table.csv"))
 
         # Assuming the first column is 'Date' and the rest are catchment codes
         catchments = data.columns[1:]
@@ -288,7 +295,7 @@ for catchment in catchments:
         modified_quantiles.set_index('date', inplace=True, drop=False)
 
         # Write the final output
-        filename = f"./tables/{catchment}_current.txt"
+        filename = os.path.join(tables_dir, f"{catchment}_current.txt")
         modified_quantiles = modified_quantiles.drop(columns=['index'])
 
 

@@ -1,6 +1,6 @@
 import os
-import rasterio
-from rasterio.mask import mask
+import xarray as xr
+import rioxarray
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -17,167 +17,129 @@ logger = setup_logger_with_tqdm("results_table", file=False)
 startTime = datetime.now()
 thismonth = startTime.month    # now
 thisyear = startTime.year
-year = str([thisyear if thismonth in {9, 10, 11, 12} else thisyear-1][0])
+year = [thisyear if thismonth in {9, 10, 11, 12} else thisyear-1][0]
 logger.info(f"Processing water year: {year}")
 
+# Try to load paths from snowmapper.yml config
+try:
+    from config import load_config
+    cfg = load_config()
+    shapefile_path = os.path.join(cfg['paths']['basins_dir'], 'basins.shp')
+    directory = cfg['paths']['spatial_dir'] + "/"
+    tables_dir = cfg['paths']['tables_dir']
+    logger.info(f"Using config paths: basins={cfg['paths']['basins_dir']}, spatial={directory}")
+except (FileNotFoundError, ImportError):
+    # Fall back to default paths (new structure)
+    shapefile_path = "./inputs/basins/basins.shp"
+    directory = "./spatial/"
+    tables_dir = "./tables"
+    logger.info("No snowmapper.yml found, using default paths")
 
 # Load the shapefile containing polygons
-shapefile_path = "./master/inputs/basins/basins.shp"
 polygons = gpd.read_file(shapefile_path)
-# Directory containing merged reprojected files swe
-directory = "./spatial/"
 
 # create output dir for tables
-os.makedirs("./tables", exist_ok=True)
+os.makedirs(tables_dir, exist_ok=True)
 
-# Function to extract mean value within each polygon
-def extract_mean_values(merged_raster, polygons):
+
+def extract_mean_values_nc(nc_file, polygons):
+    """Extract mean values from NetCDF file for each polygon."""
+    ds = xr.open_dataset(nc_file)
+    # Get the data variable (first non-coordinate variable)
+    var_name = [v for v in ds.data_vars][0]
+    da = ds[var_name]
+
+    # Ensure CRS is set
+    if da.rio.crs is None:
+        da = da.rio.write_crs("EPSG:4326")
+
     mean_values = []
-    dates = []
     for idx, geom in enumerate(polygons.geometry):
-        # Mask the raster within the polygon
-        masked, _ = mask(merged_raster, [geom], crop=True)
-        # Calculate mean value
-        mean_value = np.nanmean(masked)
+        try:
+            clipped = da.rio.clip([geom], polygons.crs, drop=True)
+            mean_value = float(clipped.mean().values)
+        except Exception:
+            mean_value = np.nan
         mean_values.append(mean_value)
-        # Get date from filename or any other source
-        # Assuming you have the date in a variable named 'date'
-        date = "YYYY-MM-DD"  # Replace this with the actual date
-        dates.append(date)
-    return mean_values, dates
 
-def natural_sort(l):
-    def convert(text): return int(text) if text.isdigit() else text.lower()
-    def alphanum_key(key): return [convert(c) for c in re.split('([0-9]+)', key)]
-    return sorted(l, key=alphanum_key)
-   
+    ds.close()
+    return mean_values
+
+
+def get_date_from_nc_filename(filename):
+    """Extract date from NC filename like SWE_20251001.nc"""
+    basename = os.path.basename(filename)
+    # Pattern: VAR_YYYYMMDD.nc
+    date_str = basename.split("_")[1].split(".")[0]
+    return datetime.strptime(date_str, "%Y%m%d")
+
+
+def get_water_year_files(directory, variable, water_year):
+    """Get all NC files for a variable within the water year (Sep 1 to Aug 31)."""
+    # Water year starts Sep 1 of 'water_year' and ends Aug 31 of 'water_year + 1'
+    start_date = datetime(water_year, 9, 1)
+    end_date = datetime(water_year + 1, 8, 31)
+
+    pattern = os.path.join(directory, f"{variable}_*.nc")
+    all_files = glob.glob(pattern)
+
+    water_year_files = []
+    for f in all_files:
+        try:
+            file_date = get_date_from_nc_filename(f)
+            if start_date <= file_date <= end_date:
+                water_year_files.append(f)
+        except (ValueError, IndexError):
+            continue
+
+    # Sort by date
+    water_year_files.sort(key=get_date_from_nc_filename)
+    return water_year_files
+
 
 #===============================================================================
 # Basin SWE
 #===============================================================================
 
-# Create an empty DataFrame to store all results
 results_df = pd.DataFrame(columns=['Date'] + [str(idx) for idx in list(polygons['REGION'])])
-a = glob.glob(directory + "swe_merged_reprojected_"+ str(year) + "*")
-file_list = natural_sort(a)
-    
-    
-# Iterate over files in the directory
+file_list = get_water_year_files(directory, "SWE", year)
+
 for filename in tqdm(file_list, desc="Basin SWE"):
-        # Extract date from filename
-        date1 = filename.split("_")[3]
-        day= filename.split("_")[4].split(".")[0]
-
-        date = date1 +"_"+ day
-
-        from datetime import datetime, timedelta
-
-        def convert_to_timestamp(date_str):
-            # Split the string into year and DOY components
-            year, doy = map(int, date_str.split('_'))
-
-            # Calculate the date by adding the DOY to September 1st of that year
-            base_date = datetime(year, 9, 1)
-            target_date = base_date + timedelta(days=doy)  # Subtract 1 since DOY starts from 1
-
-            return target_date
-
-        # Example usage
-        timestamp = convert_to_timestamp(date)
-
-
-
-
-        # Load the merged raster
-        merged_raster_path = os.path.join( filename)
-        merged_raster = rasterio.open(merged_raster_path)
-
-        # Extract mean values and dates
-        mean_values, _ = extract_mean_values(merged_raster, polygons)
-
-        # Append results to the DataFrame
-        # results_df[date] = pd.Series(mean_values)
-
-        # Append results to the DataFrame
-        results_df.loc[len(results_df)] = [timestamp] + mean_values
+    timestamp = get_date_from_nc_filename(filename)
+    mean_values = extract_mean_values_nc(filename, polygons)
+    results_df.loc[len(results_df)] = [timestamp] + mean_values
 
 # Extract the 'Date' column
 date_column = results_df['Date']
 
-# Save the results to a single CSV file
-
-df_no_date = results_df.drop(columns=['Date'])
 # Group columns by their names and calculate the average
+df_no_date = results_df.drop(columns=['Date'])
 averages = df_no_date.T.groupby(df_no_date.columns).mean().T
 
 # Concatenate the 'Date' column with the resulting DataFrame
 out = pd.concat([date_column, averages], axis=1)
 
-out.to_csv("./tables/swe_basin_mean_values_table.csv", index=False)
+out.to_csv(os.path.join(tables_dir, "swe_basin_mean_values_table.csv"), index=False)
 logger.info("Saved swe_basin_mean_values_table.csv")
 
 #===============================================================================
 # Basin HS
 #===============================================================================
 
-# Create an empty DataFrame to store all results
 results_df = pd.DataFrame(columns=['Date'] + [str(idx) for idx in list(polygons['REGION'])])
-a = glob.glob(directory + "hs_merged_reprojected_"+ str(year) + "*")
-file_list = natural_sort(a)
+file_list = get_water_year_files(directory, "HS", year)
 
-
-# Iterate over files in the directory
 for filename in tqdm(file_list, desc="Basin HS"):
-        # Extract date from filename
-        date1 = filename.split("_")[3]
-        day= filename.split("_")[4].split(".")[0]
+    timestamp = get_date_from_nc_filename(filename)
+    mean_values = extract_mean_values_nc(filename, polygons)
+    results_df.loc[len(results_df)] = [timestamp] + mean_values
 
-        date = date1 +"_"+ day
-
-        from datetime import datetime, timedelta
-
-        def convert_to_timestamp(date_str):
-            # Split the string into year and DOY components
-            year, doy = map(int, date_str.split('_'))
-
-            # Calculate the date by adding the DOY to September 1st of that year
-            base_date = datetime(year, 9, 1)
-            target_date = base_date + timedelta(days=doy)  # Subtract 1 since DOY starts from 1
-
-            return target_date
-
-        # Example usage
-        timestamp = convert_to_timestamp(date)
-
-
-
-
-        # Load the merged raster
-        merged_raster_path = os.path.join( filename)
-        merged_raster = rasterio.open(merged_raster_path)
-
-        # Extract mean values and dates
-        mean_values, _ = extract_mean_values(merged_raster, polygons)
-
-        # Append results to the DataFrame
-        # results_df[date] = pd.Series(mean_values)
-
-        # Append results to the DataFrame
-        results_df.loc[len(results_df)] = [timestamp] + mean_values
-
-# Extract the 'Date' column
 date_column = results_df['Date']
-
-# Save the results to a single CSV file
-
 df_no_date = results_df.drop(columns=['Date'])
-# Group columns by their names and calculate the average
 averages = df_no_date.T.groupby(df_no_date.columns).mean().T
-
-# Concatenate the 'Date' column with the resulting DataFrame
 out = pd.concat([date_column, averages], axis=1)
 
-out.to_csv("./tables/hs_basin_mean_values_table.csv", index=False)
+out.to_csv(os.path.join(tables_dir, "hs_basin_mean_values_table.csv"), index=False)
 logger.info("Saved hs_basin_mean_values_table.csv")
 
 
@@ -185,225 +147,64 @@ logger.info("Saved hs_basin_mean_values_table.csv")
 # Basin ROF
 #===============================================================================
 
-# Create an empty DataFrame to store all results
 results_df = pd.DataFrame(columns=['Date'] + [str(idx) for idx in list(polygons['REGION'])])
-a = glob.glob(directory + "ROF_merged_reprojected_"+ str(year) + "*")
-file_list = natural_sort(a)
+file_list = get_water_year_files(directory, "ROF", year)
 
-
-# Iterate over files in the directory
 for filename in tqdm(file_list, desc="Basin ROF"):
-        
-        # Extract date from filename
-        date1 = filename.split("_")[3]
-        day= filename.split("_")[4].split(".")[0]
-        
-        date = date1 +"_"+ day
-        
-        from datetime import datetime, timedelta
+    timestamp = get_date_from_nc_filename(filename)
+    mean_values = extract_mean_values_nc(filename, polygons)
+    results_df.loc[len(results_df)] = [timestamp] + mean_values
 
-        def convert_to_timestamp(date_str):
-            # Split the string into year and DOY components
-            year, doy = map(int, date_str.split('_'))
-
-            # Calculate the date by adding the DOY to September 1st of that year
-            base_date = datetime(year, 9, 1)
-            target_date = base_date + timedelta(days=doy)  # Subtract 1 since DOY starts from 1
-
-            return target_date
-
-        # Example usage
-        timestamp = convert_to_timestamp(date)
-
-
-
-
-        # Load the merged raster
-        merged_raster_path = os.path.join( filename)
-        merged_raster = rasterio.open(merged_raster_path)
-
-        # Extract mean values and dates
-        mean_values, _ = extract_mean_values(merged_raster, polygons)
-
-        # Append results to the DataFrame
-        # results_df[date] = pd.Series(mean_values)
-        
-        # Append results to the DataFrame
-        results_df.loc[len(results_df)] = [timestamp] + mean_values
-        
-# Extract the 'Date' column
 date_column = results_df['Date']
-
-# Save the results to a single CSV file
-
 df_no_date = results_df.drop(columns=['Date'])
-# Group columns by their names and calculate the average
 averages = df_no_date.T.groupby(df_no_date.columns).mean().T
-
-# Concatenate the 'Date' column with the resulting DataFrame
 out = pd.concat([date_column, averages], axis=1)
 
-out.to_csv("./tables/rof_basin_mean_values_table.csv", index=False)
+out.to_csv(os.path.join(tables_dir, "rof_basin_mean_values_table.csv"), index=False)
 logger.info("Saved rof_basin_mean_values_table.csv")
-
-
 
 
 #===============================================================================
 # Catchment SWE
 #===============================================================================
 
-# Create an empty DataFrame to store all results
 results_df = pd.DataFrame(columns=['Date'] + [str(idx) for idx in list(polygons['CODE'])])
-a = glob.glob(directory + "swe_merged_reprojected_"+ str(year) + "*")
-file_list = natural_sort(a)
-    
-    
-# Iterate over files in the directory
+file_list = get_water_year_files(directory, "SWE", year)
+
 for filename in tqdm(file_list, desc="Catchment SWE"):
-        # Extract date from filename
-        date1 = filename.split("_")[3]
-        day= filename.split("_")[4].split(".")[0]
+    timestamp = get_date_from_nc_filename(filename)
+    mean_values = extract_mean_values_nc(filename, polygons)
+    results_df.loc[len(results_df)] = [timestamp] + mean_values
 
-        date = date1 +"_"+ day
-
-        from datetime import datetime, timedelta
-
-        def convert_to_timestamp(date_str):
-            # Split the string into year and DOY components
-            year, doy = map(int, date_str.split('_'))
-
-            # Calculate the date by adding the DOY to September 1st of that year
-            base_date = datetime(year, 9, 1)
-            target_date = base_date + timedelta(days=doy)  # Subtract 1 since DOY starts from 1
-
-            return target_date
-
-        # Example usage
-        timestamp = convert_to_timestamp(date)
-
-
-
-
-        # Load the merged raster
-        merged_raster_path = os.path.join( filename)
-        merged_raster = rasterio.open(merged_raster_path)
-
-        # Extract mean values and dates
-        mean_values, _ = extract_mean_values(merged_raster, polygons)
-
-        # Append results to the DataFrame
-        # results_df[date] = pd.Series(mean_values)
-
-        # Append results to the DataFrame
-        results_df.loc[len(results_df)] = [timestamp] + mean_values
-
-
-results_df.to_csv("./tables/swe_mean_values_table.csv", index=False)
+results_df.to_csv(os.path.join(tables_dir, "swe_mean_values_table.csv"), index=False)
 logger.info("Saved swe_mean_values_table.csv")
 
 #===============================================================================
 # Catchment HS
 #===============================================================================
 
-# Create an empty DataFrame to store all results
 results_df = pd.DataFrame(columns=['Date'] + [str(idx) for idx in list(polygons['CODE'])])
-a = glob.glob(directory + "hs_merged_reprojected_"+ str(year) + "*")
-file_list = natural_sort(a)
-    
-    
-# Iterate over files in the directory
+file_list = get_water_year_files(directory, "HS", year)
+
 for filename in tqdm(file_list, desc="Catchment HS"):
-        # Extract date from filename
-        date1 = filename.split("_")[3]
-        day= filename.split("_")[4].split(".")[0]
+    timestamp = get_date_from_nc_filename(filename)
+    mean_values = extract_mean_values_nc(filename, polygons)
+    results_df.loc[len(results_df)] = [timestamp] + mean_values
 
-        date = date1 +"_"+ day
-
-        from datetime import datetime, timedelta
-
-        def convert_to_timestamp(date_str):
-            # Split the string into year and DOY components
-            year, doy = map(int, date_str.split('_'))
-
-            # Calculate the date by adding the DOY to September 1st of that year
-            base_date = datetime(year, 9, 1)
-            target_date = base_date + timedelta(days=doy)  # Subtract 1 since DOY starts from 1
-
-            return target_date
-
-        # Example usage
-        timestamp = convert_to_timestamp(date)
-
-
-
-
-        # Load the merged raster
-        merged_raster_path = os.path.join( filename)
-        merged_raster = rasterio.open(merged_raster_path)
-
-        # Extract mean values and dates
-        mean_values, _ = extract_mean_values(merged_raster, polygons)
-
-        # Append results to the DataFrame
-        # results_df[date] = pd.Series(mean_values)
-
-        # Append results to the DataFrame
-        results_df.loc[len(results_df)] = [timestamp] + mean_values
-
-
-results_df.to_csv("./tables/hs_mean_values_table.csv", index=False)
+results_df.to_csv(os.path.join(tables_dir, "hs_mean_values_table.csv"), index=False)
 logger.info("Saved hs_mean_values_table.csv")
 
 #===============================================================================
 # Catchment ROF
 #===============================================================================
 
-# Create an empty DataFrame to store all results
 results_df = pd.DataFrame(columns=['Date'] + [str(idx) for idx in list(polygons['CODE'])])
-a = glob.glob(directory + "ROF_merged_reprojected_"+ str(year) + "*")
-file_list = natural_sort(a)
+file_list = get_water_year_files(directory, "ROF", year)
 
-
-# Iterate over files in the directory
 for filename in tqdm(file_list, desc="Catchment ROF"):
-        # Extract date from filename
-        date1 = filename.split("_")[3]
-        day= filename.split("_")[4].split(".")[0]
+    timestamp = get_date_from_nc_filename(filename)
+    mean_values = extract_mean_values_nc(filename, polygons)
+    results_df.loc[len(results_df)] = [timestamp] + mean_values
 
-        date = date1 +"_"+ day
-
-        from datetime import datetime, timedelta
-
-        def convert_to_timestamp(date_str):
-            # Split the string into year and DOY components
-            year, doy = map(int, date_str.split('_'))
-
-            # Calculate the date by adding the DOY to September 1st of that year
-            base_date = datetime(year, 9, 1)
-            target_date = base_date + timedelta(days=doy)  # Subtract 1 since DOY starts from 1
-
-            return target_date
-
-        # Example usage
-        timestamp = convert_to_timestamp(date)
-
-
-
-
-        # Load the merged raster
-        merged_raster_path = os.path.join( filename)
-        merged_raster = rasterio.open(merged_raster_path)
-
-        # Extract mean values and dates
-        mean_values, _ = extract_mean_values(merged_raster, polygons)
-
-        # Append results to the DataFrame
-        # results_df[date] = pd.Series(mean_values)
-
-        # Append results to the DataFrame
-        results_df.loc[len(results_df)] = [timestamp] + mean_values
-
-
-results_df.to_csv("./tables/rof_mean_values_table.csv", index=False)
+results_df.to_csv(os.path.join(tables_dir, "rof_mean_values_table.csv"), index=False)
 logger.info("Saved rof_mean_values_table.csv")
