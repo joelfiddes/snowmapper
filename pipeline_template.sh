@@ -143,9 +143,8 @@ log "=========================================="
 # Step 1: Fetch IFS forecast (uses shared climate dir)
 run_step "Fetch IFS forecast" python "$SCRIPTS/fetch_ifs_forecast.py" || exit 1
 
-# Step 2: Download ERA5 and downscale (currently needs master dir structure)
-# For now, skip this step as climate data is symlinked from existing run
-skip_step "Download ERA5 (using symlinked climate data)"
+# Step 2: Download ERA5 climate data
+run_step "Download ERA5" python "$SCRIPTS/download_era5.py" || exit 1
 
 # Process each enabled domain
 for DOMAIN in $DOMAINS; do
