@@ -158,7 +158,16 @@ def main(mydir):
 ```
 Also added explicit `del df, grid_stack, lats, lons` in process_variable() for immediate cleanup.
 
-### 5.2 Disable Debug Output in TopoPyScale
+### 5.2 Parallel File Reading in TopoPyScale ✅ IMPLEMENTED
+Modified `agg_by_var_fsm()` in `/Users/joel/src/TopoPyScale/TopoPyScale/sim_fsm.py`:
+- Added `ThreadPoolExecutor` for parallel FSM file reading
+- Threshold: parallel mode activates when `n_files > 50`
+- Default 8 workers, configurable via `n_workers` parameter
+- Also fixed SyntaxWarning (raw string regex) and FutureWarning (parse_dates deprecation)
+
+**Expected speedup at 2000 clusters:** 4-8x for file reading phase
+
+### 5.3 Disable Debug Output in TopoPyScale
 The numbered output (0, 1, 2, ..., 19) is debug print statements in sim_fsm.py.
 Removing these will slightly improve I/O performance.
 *Note: This is in TopoPyScale external code, not snowmapper.*
