@@ -146,7 +146,7 @@ polygon_mask = rasterize(polygons.geometry, out_shape=grid.shape, transform=affi
 
 ## 5. Quick Wins (Immediate Implementation)
 
-### 5.1 Add gc.collect() to grid_fsm_to_netcdf.py
+### 5.1 Add gc.collect() to grid_fsm_to_netcdf.py ✅ IMPLEMENTED
 ```python
 import gc
 
@@ -154,18 +154,17 @@ def main(mydir):
     ...
     for var, unit in [("swe", "mm"), ("snd", "m"), ("rof", "mm"), ("gst", "k")]:
         process_variable(var, unit, config.dem.epsg, config.dem.dem_resol)
-        gc.collect()  # <-- Add this
+        gc.collect()  # <-- Added
 ```
+Also added explicit `del df, grid_stack, lats, lons` in process_variable() for immediate cleanup.
 
 ### 5.2 Disable Debug Output in TopoPyScale
 The numbered output (0, 1, 2, ..., 19) is debug print statements in sim_fsm.py.
 Removing these will slightly improve I/O performance.
+*Note: This is in TopoPyScale external code, not snowmapper.*
 
-### 5.3 Use float32 Consistently
-Ensure all arrays use float32 (not float64) to halve memory usage:
-```python
-data = data.astype('float32')
-```
+### 5.3 Use float32 Consistently ✅ ALREADY IN USE
+The code already uses float32 in `topo_map_sim_memsafe()` and `write_ncdf()` calls.
 
 ---
 
