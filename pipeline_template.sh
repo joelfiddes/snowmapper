@@ -154,9 +154,9 @@ for DOMAIN in $DOMAINS; do
     log "Processing domain: $DOMAIN_NAME"
     log "=========================================="
 
-    # Check if sim_archive exists (skip init if so)
-    ARCHIVE_FILE="$DOMAIN/sim_archive/HS.nc"
-    if [ -f "$ARCHIVE_FILE" ]; then
+    # Check if sim_archive outputs exist (skip init if so)
+    ARCHIVE_DIR="$DOMAIN/sim_archive/outputs"
+    if [ -d "$ARCHIVE_DIR" ] && [ "$(ls -A "$ARCHIVE_DIR"/*.nc 2>/dev/null)" ]; then
         skip_step "Init $DOMAIN_NAME domain (sim_archive exists)"
         skip_step "Run archive simulation (sim_archive exists)"
     else
