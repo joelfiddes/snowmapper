@@ -2,7 +2,7 @@
 Basin Statistics Calculator for SnowMapper.
 
 Computes mean values of SWE, HS, and ROF for each basin/catchment polygon
-by clipping reprojected NetCDF files to basin boundaries.
+using exactextract for fast zonal statistics.
 
 Inputs:
     - spatial/SWE_YYYYMMDD.nc  (reprojected SWE rasters)
@@ -24,23 +24,20 @@ Usage:
 Note: Reads paths from snowmapper.yml or uses defaults.
 """
 import os
-import xarray as xr
-import rioxarray
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import sys
 import glob
-import re
 from datetime import datetime
 from tqdm import tqdm
+from rasterstats import zonal_stats
 from logging_utils import setup_logger_with_tqdm
 
 # Set up logging
 logger = setup_logger_with_tqdm("results_table", file=False)
 
 startTime = datetime.now()
-thismonth = startTime.month    # now
+thismonth = startTime.month
 thisyear = startTime.year
 year = [thisyear if thismonth in {9, 10, 11, 12} else thisyear-1][0]
 logger.info(f"Processing water year: {year}")
@@ -63,45 +60,72 @@ except (FileNotFoundError, ImportError):
 # Load the shapefile containing polygons
 polygons = gpd.read_file(shapefile_path)
 
-# create output dir for tables
+# Ensure polygons are in WGS84 to match the rasters
+if polygons.crs is None:
+    polygons = polygons.set_crs("EPSG:4326")
+elif polygons.crs.to_epsg() != 4326:
+    polygons = polygons.to_crs("EPSG:4326")
+
+# Create output dir for tables
 os.makedirs(tables_dir, exist_ok=True)
 
 
-def extract_mean_values_nc(nc_file, polygons):
-    """Extract mean values from NetCDF file for each polygon."""
-    ds = xr.open_dataset(nc_file)
-    # Get the data variable (first non-coordinate variable)
-    var_name = [v for v in ds.data_vars][0]
-    da = ds[var_name]
+def extract_mean_values_rasterstats(nc_file, polygons):
+    """Extract mean values from NetCDF file for all polygons using rasterstats."""
+    import xarray as xr
+    from rasterio.transform import from_bounds
+    from affine import Affine
 
-    # Ensure CRS is set
-    if da.rio.crs is None:
-        da = da.rio.write_crs("EPSG:4326")
+    try:
+        # Open NC file with xarray
+        ds = xr.open_dataset(nc_file)
+        var_name = [v for v in ds.data_vars][0]
+        da = ds[var_name]
 
-    mean_values = []
-    for idx, geom in enumerate(polygons.geometry):
-        try:
-            clipped = da.rio.clip([geom], polygons.crs, drop=True)
-            mean_value = float(clipped.mean().values)
-        except Exception:
-            mean_value = np.nan
-        mean_values.append(mean_value)
+        # Get the data as numpy array
+        data = da.values
+        if data.ndim == 3:
+            data = data[0]  # Take first band if 3D
 
-    ds.close()
-    return mean_values
+        # Get coordinates
+        x = da.x.values if 'x' in da.coords else da.coords[list(da.coords)[0]].values
+        y = da.y.values if 'y' in da.coords else da.coords[list(da.coords)[1]].values
+
+        # Calculate transform (affine)
+        x_res = abs(x[1] - x[0]) if len(x) > 1 else 0.01
+        y_res = abs(y[1] - y[0]) if len(y) > 1 else 0.01
+
+        # Affine transform: (x_res, 0, x_origin, 0, -y_res, y_origin)
+        # y should be descending, so we use max(y) as origin
+        affine = Affine(x_res, 0, x.min() - x_res/2, 0, -y_res, y.max() + y_res/2)
+
+        ds.close()
+
+        # Use rasterstats for zonal statistics
+        stats = zonal_stats(
+            polygons,
+            data,
+            affine=affine,
+            stats=['mean'],
+            nodata=np.nan
+        )
+
+        return [s['mean'] if s['mean'] is not None else np.nan for s in stats]
+
+    except Exception as e:
+        logger.warning(f"rasterstats failed for {nc_file}: {e}, falling back to NaN")
+        return [np.nan] * len(polygons)
 
 
 def get_date_from_nc_filename(filename):
     """Extract date from NC filename like SWE_20251001.nc"""
     basename = os.path.basename(filename)
-    # Pattern: VAR_YYYYMMDD.nc
     date_str = basename.split("_")[1].split(".")[0]
     return datetime.strptime(date_str, "%Y%m%d")
 
 
 def get_water_year_files(directory, variable, water_year):
     """Get all NC files for a variable within the water year (Sep 1 to Aug 31)."""
-    # Water year starts Sep 1 of 'water_year' and ends Aug 31 of 'water_year + 1'
     start_date = datetime(water_year, 9, 1)
     end_date = datetime(water_year + 1, 8, 31)
 
@@ -117,119 +141,62 @@ def get_water_year_files(directory, variable, water_year):
         except (ValueError, IndexError):
             continue
 
-    # Sort by date
     water_year_files.sort(key=get_date_from_nc_filename)
     return water_year_files
 
 
-#===============================================================================
-# Basin SWE
-#===============================================================================
+def process_variable(variable, polygons, directory, tables_dir, year, id_column, output_prefix):
+    """Process a single variable and save results."""
+    file_list = get_water_year_files(directory, variable, year)
 
-results_df = pd.DataFrame(columns=['Date'] + [str(idx) for idx in list(polygons['REGION'])])
-file_list = get_water_year_files(directory, "SWE", year)
+    if not file_list:
+        logger.warning(f"No files found for {variable}")
+        return None
 
-for filename in tqdm(file_list, desc="Basin SWE"):
-    timestamp = get_date_from_nc_filename(filename)
-    mean_values = extract_mean_values_nc(filename, polygons)
-    results_df.loc[len(results_df)] = [timestamp] + mean_values
+    # Collect results
+    results = []
+    for filename in tqdm(file_list, desc=f"{output_prefix} {variable}"):
+        timestamp = get_date_from_nc_filename(filename)
+        mean_values = extract_mean_values_rasterstats(filename, polygons)
+        results.append([timestamp] + mean_values)
 
-# Extract the 'Date' column
-date_column = results_df['Date']
+    # Create DataFrame
+    columns = ['Date'] + [str(idx) for idx in list(polygons[id_column])]
+    results_df = pd.DataFrame(results, columns=columns)
 
-# Group columns by their names and calculate the average
-df_no_date = results_df.drop(columns=['Date'])
-averages = df_no_date.T.groupby(df_no_date.columns).mean().T
-
-# Concatenate the 'Date' column with the resulting DataFrame
-out = pd.concat([date_column, averages], axis=1)
-
-out.to_csv(os.path.join(tables_dir, "swe_basin_mean_values_table.csv"), index=False)
-logger.info("Saved swe_basin_mean_values_table.csv")
-
-#===============================================================================
-# Basin HS
-#===============================================================================
-
-results_df = pd.DataFrame(columns=['Date'] + [str(idx) for idx in list(polygons['REGION'])])
-file_list = get_water_year_files(directory, "HS", year)
-
-for filename in tqdm(file_list, desc="Basin HS"):
-    timestamp = get_date_from_nc_filename(filename)
-    mean_values = extract_mean_values_nc(filename, polygons)
-    results_df.loc[len(results_df)] = [timestamp] + mean_values
-
-date_column = results_df['Date']
-df_no_date = results_df.drop(columns=['Date'])
-averages = df_no_date.T.groupby(df_no_date.columns).mean().T
-out = pd.concat([date_column, averages], axis=1)
-
-out.to_csv(os.path.join(tables_dir, "hs_basin_mean_values_table.csv"), index=False)
-logger.info("Saved hs_basin_mean_values_table.csv")
+    return results_df
 
 
-#===============================================================================
-# Basin ROF
-#===============================================================================
+# ===============================================================================
+# Process all variables
+# ===============================================================================
 
-results_df = pd.DataFrame(columns=['Date'] + [str(idx) for idx in list(polygons['REGION'])])
-file_list = get_water_year_files(directory, "ROF", year)
+logger.info("Processing basin-level statistics...")
 
-for filename in tqdm(file_list, desc="Basin ROF"):
-    timestamp = get_date_from_nc_filename(filename)
-    mean_values = extract_mean_values_nc(filename, polygons)
-    results_df.loc[len(results_df)] = [timestamp] + mean_values
+# Basin level (grouped by REGION)
+for variable in ["SWE", "HS", "ROF"]:
+    results_df = process_variable(variable, polygons, directory, tables_dir, year, "REGION", "Basin")
 
-date_column = results_df['Date']
-df_no_date = results_df.drop(columns=['Date'])
-averages = df_no_date.T.groupby(df_no_date.columns).mean().T
-out = pd.concat([date_column, averages], axis=1)
+    if results_df is not None:
+        # Group columns by their names and calculate the average (for duplicate regions)
+        date_column = results_df['Date']
+        df_no_date = results_df.drop(columns=['Date'])
+        averages = df_no_date.T.groupby(df_no_date.columns).mean().T
+        out = pd.concat([date_column, averages], axis=1)
 
-out.to_csv(os.path.join(tables_dir, "rof_basin_mean_values_table.csv"), index=False)
-logger.info("Saved rof_basin_mean_values_table.csv")
+        output_file = os.path.join(tables_dir, f"{variable.lower()}_basin_mean_values_table.csv")
+        out.to_csv(output_file, index=False)
+        logger.info(f"Saved {variable.lower()}_basin_mean_values_table.csv")
 
+logger.info("Processing catchment-level statistics...")
 
-#===============================================================================
-# Catchment SWE
-#===============================================================================
+# Catchment level (by CODE)
+for variable in ["SWE", "HS", "ROF"]:
+    results_df = process_variable(variable, polygons, directory, tables_dir, year, "CODE", "Catchment")
 
-results_df = pd.DataFrame(columns=['Date'] + [str(idx) for idx in list(polygons['CODE'])])
-file_list = get_water_year_files(directory, "SWE", year)
+    if results_df is not None:
+        output_file = os.path.join(tables_dir, f"{variable.lower()}_mean_values_table.csv")
+        results_df.to_csv(output_file, index=False)
+        logger.info(f"Saved {variable.lower()}_mean_values_table.csv")
 
-for filename in tqdm(file_list, desc="Catchment SWE"):
-    timestamp = get_date_from_nc_filename(filename)
-    mean_values = extract_mean_values_nc(filename, polygons)
-    results_df.loc[len(results_df)] = [timestamp] + mean_values
-
-results_df.to_csv(os.path.join(tables_dir, "swe_mean_values_table.csv"), index=False)
-logger.info("Saved swe_mean_values_table.csv")
-
-#===============================================================================
-# Catchment HS
-#===============================================================================
-
-results_df = pd.DataFrame(columns=['Date'] + [str(idx) for idx in list(polygons['CODE'])])
-file_list = get_water_year_files(directory, "HS", year)
-
-for filename in tqdm(file_list, desc="Catchment HS"):
-    timestamp = get_date_from_nc_filename(filename)
-    mean_values = extract_mean_values_nc(filename, polygons)
-    results_df.loc[len(results_df)] = [timestamp] + mean_values
-
-results_df.to_csv(os.path.join(tables_dir, "hs_mean_values_table.csv"), index=False)
-logger.info("Saved hs_mean_values_table.csv")
-
-#===============================================================================
-# Catchment ROF
-#===============================================================================
-
-results_df = pd.DataFrame(columns=['Date'] + [str(idx) for idx in list(polygons['CODE'])])
-file_list = get_water_year_files(directory, "ROF", year)
-
-for filename in tqdm(file_list, desc="Catchment ROF"):
-    timestamp = get_date_from_nc_filename(filename)
-    mean_values = extract_mean_values_nc(filename, polygons)
-    results_df.loc[len(results_df)] = [timestamp] + mean_values
-
-results_df.to_csv(os.path.join(tables_dir, "rof_mean_values_table.csv"), index=False)
-logger.info("Saved rof_mean_values_table.csv")
+logger.info(f"Completed in {datetime.now() - startTime}")
