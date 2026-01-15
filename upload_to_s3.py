@@ -140,6 +140,7 @@ success = s3.upload_file(output_filename_nc, SNOW_MODEL_BUCKET, s3_path, aws_acc
 
 if success:
     logger.info(f"Uploaded bundle: {s3_path}")
+    os.remove(output_filename_nc)  # Clean up temporary bundle file
 else:
     logger.error(f"Bundle upload failed: {s3_path}")
 
@@ -149,12 +150,12 @@ parameter = "HS"
 output_filename_nc = f'HS_{formatted_date}.nc' # important not written to spatial directory
 bundle_nc_files(directory, formatted_date, parameter, output_filename_nc)
 
-parameter = "HS"
 s3_path = s3.get_file_path(formatted_date, parameter, True)
 success = s3.upload_file(output_filename_nc, SNOW_MODEL_BUCKET, s3_path, aws_access_key_id, aws_secret_access_key)
 
 if success:
     logger.info(f"Uploaded bundle: {s3_path}")
+    os.remove(output_filename_nc)  # Clean up temporary bundle file
 else:
     logger.error(f"Bundle upload failed: {s3_path}")
 
@@ -164,11 +165,11 @@ parameter = "ROF"
 output_filename_nc = f'ROF_{formatted_date}.nc' # important not written to spatial directory
 bundle_nc_files(directory, formatted_date, parameter, output_filename_nc)
 
-parameter = "ROF"
 s3_path = s3.get_file_path(formatted_date, parameter, True)
 success = s3.upload_file(output_filename_nc, SNOW_MODEL_BUCKET, s3_path, aws_access_key_id, aws_secret_access_key)
 
 if success:
     logger.info(f"Uploaded bundle: {s3_path}")
+    os.remove(output_filename_nc)  # Clean up temporary bundle file
 else:
     logger.error(f"Bundle upload failed: {s3_path}")
