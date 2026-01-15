@@ -1,6 +1,19 @@
 """
-Simple configuration loader for SnowMapper.
-Returns a dict with resolved paths - no heavy abstractions.
+Configuration loader for SnowMapper.
+
+This module loads the central snowmapper.yml configuration file and resolves
+all relative paths to absolute paths based on the simulation directory.
+
+Usage:
+    from config import load_config
+    cfg = load_config()  # Uses current directory
+    cfg = load_config('/path/to/sim_dir')
+
+    # Access config values
+    climate_dir = cfg['paths']['climate_dir']
+    domains = cfg['domains']
+
+Config file: snowmapper.yml in the simulation directory root.
 """
 import os
 import yaml

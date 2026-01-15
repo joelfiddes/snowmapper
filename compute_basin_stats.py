@@ -1,3 +1,28 @@
+"""
+Basin Statistics Calculator for SnowMapper.
+
+Computes mean values of SWE, HS, and ROF for each basin/catchment polygon
+by clipping reprojected NetCDF files to basin boundaries.
+
+Inputs:
+    - spatial/SWE_YYYYMMDD.nc  (reprojected SWE rasters)
+    - spatial/HS_YYYYMMDD.nc  (reprojected HS rasters)
+    - spatial/ROF_YYYYMMDD.nc  (reprojected ROF rasters)
+    - inputs/basins/basins.shp  (basin polygons with REGION and CODE fields)
+
+Outputs:
+    - tables/swe_mean_values_table.csv  (catchment-level SWE)
+    - tables/hs_mean_values_table.csv  (catchment-level HS)
+    - tables/rof_mean_values_table.csv  (catchment-level ROF)
+    - tables/swe_basin_mean_values_table.csv  (basin-level SWE)
+    - tables/hs_basin_mean_values_table.csv  (basin-level HS)
+    - tables/rof_basin_mean_values_table.csv  (basin-level ROF)
+
+Usage:
+    python compute_basin_stats.py
+
+Note: Reads paths from snowmapper.yml or uses defaults.
+"""
 import os
 import xarray as xr
 import rioxarray

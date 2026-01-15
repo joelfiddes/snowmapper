@@ -1,3 +1,25 @@
+"""
+Raster Merge and Reproject for SnowMapper.
+
+Merges domain-level NetCDF outputs and reprojects them to WGS84 (EPSG:4326)
+for web display. Processes SWE, HS, and ROF variables.
+
+Inputs:
+    - domains/D2000/outputs/*_SWE.nc  (domain SWE outputs)
+    - domains/D2000/outputs/*_HS.nc  (domain HS outputs)
+    - domains/D2000/outputs/*_ROF.nc  (domain ROF outputs)
+
+Outputs:
+    - spatial/SWE_YYYYMMDD.nc  (reprojected SWE)
+    - spatial/HS_YYYYMMDD.nc  (reprojected HS)
+    - spatial/ROF_YYYYMMDD.nc  (reprojected ROF)
+
+Usage:
+    python merge_reproject.py <sim_dir> <domain_path>
+
+Example:
+    python merge_reproject.py ./ domains/D2000
+"""
 import xarray as xr
 import rioxarray  # Import the rioxarray module for raster I/O operations
 from datetime import datetime

@@ -1,3 +1,20 @@
+"""
+S3 Utility Functions for SnowMapper.
+
+Helper functions for uploading snow model outputs to AWS S3.
+Handles path generation and file uploads with proper error handling.
+
+Functions:
+    - get_file_path: Generate S3 path for a given date and parameter
+    - upload_file: Upload a local file to S3
+    - upload_snow_model_to_s3: Upload with standard snow model path structure
+
+Usage:
+    import s3_utils as s3
+
+    path = s3.get_file_path('20250115', 'SWE')
+    s3.upload_file('local.nc', 'bucket', path, key, secret)
+"""
 import logging
 
 import boto3

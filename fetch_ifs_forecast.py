@@ -1,9 +1,26 @@
-# https://github.com/ecmwf/ecmwf-opendata
-# https://www.ecmwf.int/en/forecasts/datasets/open-data
+"""
+IFS Forecast Fetcher for SnowMapper.
 
-#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Work in progress!! Use at own risk!
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Downloads and processes ECMWF IFS open data forecasts to fill the gap between
+ERA5 reanalysis (5-6 day latency) and the current date, plus 10-day forecasts.
+
+Inputs:
+    - Config from snowmapper.yml (optional) or default paths
+    - ECMWF open data via ecmwf-opendata package
+
+Outputs:
+    - inputs/climate/forecast/PLEV_FC_YYYY-MM-DD.nc  (daily hindcast files)
+    - inputs/climate/forecast/SURF_FC_YYYY-MM-DD.nc  (daily hindcast files)
+    - inputs/climate/forecast/PLEV_FC.nc  (merged forecast)
+    - inputs/climate/forecast/SURF_FC.nc  (merged forecast)
+
+Usage:
+    python fetch_ifs_forecast.py
+
+References:
+    - https://github.com/ecmwf/ecmwf-opendata
+    - https://www.ecmwf.int/en/forecasts/datasets/open-data
+"""
 # Steps:
 
 # For times 00z &12z: 0 to 144 by 3, 150 to 240 by 6.

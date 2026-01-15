@@ -1,3 +1,29 @@
+"""
+S3 Uploader for SnowMapper.
+
+Uploads daily NetCDF files and bundled forecast files to AWS S3 for
+web display at snowmapper.ch.
+
+Inputs:
+    - spatial/SWE_YYYYMMDD.nc  (daily SWE)
+    - spatial/HS_YYYYMMDD.nc  (daily HS)
+    - spatial/ROF_YYYYMMDD.nc  (daily ROF)
+
+Outputs (to S3):
+    - s3://bucket/joel-snow-model/SWE/YYYY/YYYYMM/SWE_YYYYMMDD.nc  (daily)
+    - s3://bucket/joel-snow-model/HS/YYYY/YYYYMM/HS_YYYYMMDD.nc  (daily)
+    - s3://bucket/joel-snow-model/ROF/YYYY/YYYYMM/ROF_YYYYMMDD.nc  (daily)
+    - s3://bucket/joel-snow-model/forecast/SWE/...  (bundled forecasts)
+
+Requirements:
+    - AWS credentials in ~/.aws/credentials or environment variables
+    - boto3 library
+
+Usage:
+    python upload_to_s3.py
+
+Note: Reads paths and bucket from snowmapper.yml or uses defaults.
+"""
 import s3_utils as s3
 from TopoPyScale import fetch_era5 as fe
 import boto3

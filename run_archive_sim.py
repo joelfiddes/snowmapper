@@ -1,3 +1,24 @@
+"""
+Archive Simulation Runner for SnowMapper.
+
+Runs the initial/archive FSM simulation from the start of the water year
+to the current date. This establishes the baseline snow state that the
+forecast simulation continues from.
+
+Inputs:
+    - Domain directory with config.yml and initialized outputs
+    - Merged climate forcing (SURF/PLEV_final_merged_output.nc)
+
+Outputs:
+    - sim_archive/outputs/FSM_pt_*.txt  (FSM point outputs)
+    - sim_archive/outputs/downscaled/*.nc  (downscaled climate)
+
+Usage:
+    python run_archive_sim.py <domain_path>
+
+Example:
+    python run_archive_sim.py ./domains/D2000
+"""
 import os
 import sys
 import shutil

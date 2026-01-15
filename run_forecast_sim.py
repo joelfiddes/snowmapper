@@ -1,3 +1,24 @@
+"""
+Forecast Simulation Runner for SnowMapper.
+
+Runs the rolling FSM simulation for the forecast period (last 7 days + forecast).
+This continues from the archive simulation state and produces outputs that are
+merged back into sim_archive.
+
+Inputs:
+    - Domain directory with config.yml and sim_archive outputs
+    - Merged climate forcing (SURF/PLEV_final_merged_output.nc)
+
+Outputs:
+    - sim_latest/outputs/FSM_pt_*.txt  (FSM point outputs for forecast period)
+    - sim_latest/outputs/downscaled/*.nc  (downscaled climate)
+
+Usage:
+    python run_forecast_sim.py <domain_path>
+
+Example:
+    python run_forecast_sim.py ./domains/D2000
+"""
 import os
 import sys
 import shutil

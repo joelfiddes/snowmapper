@@ -1,3 +1,26 @@
+"""
+FSM to NetCDF Converter for SnowMapper.
+
+Converts merged FSM point outputs to gridded NetCDF files by mapping
+cluster values back to the original DEM grid using landform membership.
+
+Inputs:
+    - outputs/FSM_pt_*.txt  (merged FSM point outputs)
+    - outputs/landform.tif  (TopoSUB cluster classification)
+    - config.yml  (DEM resolution and EPSG)
+
+Outputs:
+    - outputs/*_SWE.nc  (snow water equivalent, mm)
+    - outputs/*_HS.nc  (snow height, m)
+    - outputs/*_ROF.nc  (runoff, mm)
+    - outputs/*_GST.nc  (ground surface temperature, K)
+
+Usage:
+    python grid_fsm_to_netcdf.py <domain_path>
+
+Example:
+    python grid_fsm_to_netcdf.py ./domains/D2000
+"""
 import os
 import sys
 from munch import DefaultMunch

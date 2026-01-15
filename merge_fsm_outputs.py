@@ -1,3 +1,29 @@
+"""
+FSM Output Merger for SnowMapper.
+
+Merges FSM simulation outputs from sim_archive and sim_latest directories,
+handling overlapping timestamps by prioritizing the latest data. Then runs
+FSM post-processing to generate aggregated outputs.
+
+Inputs:
+    - sim_archive/outputs/FSM_pt_*.txt  (archive simulation outputs)
+    - sim_latest/outputs/FSM_pt_*.txt  (forecast simulation outputs)
+
+Outputs:
+    - outputs/FSM_pt_*.txt  (merged point outputs)
+    - outputs/fsm_sims/*.nc  (aggregated FSM outputs)
+
+Usage:
+    python merge_fsm_outputs.py <domain_path>
+
+Example:
+    python merge_fsm_outputs.py ./domains/D2000
+
+Notes:
+    - First run goes to sim_archive, while sim_latest is empty so nothing is merged
+    - All subsequent runs write to sim_latest then merged with sim_archive
+    - Overlapping timestamps are handled by keeping the latest data
+"""
 import os
 import re
 import glob
@@ -9,10 +35,6 @@ from logging_utils import setup_logger_with_tqdm, get_log_dir
 
 # Module-level logger
 logger = None
-
-# first run goes to sim archive, while sim_latest is empty so nothing is merged
-# all subsequent runs write to sim_latest then merged with the extenteding sim_archive files
-# finally copy to output directory
 
 def create_directory(path):
     """

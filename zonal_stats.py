@@ -1,3 +1,30 @@
+"""
+Zonal Statistics Formatter for SnowMapper.
+
+Transforms basin statistics CSVs into per-catchment time series files
+suitable for web display. Adds forecast flag (FC) column to distinguish
+ERA5 (historical) from IFS (forecast) data.
+
+Inputs:
+    - tables/swe_mean_values_table.csv
+    - tables/hs_mean_values_table.csv
+    - tables/rof_mean_values_table.csv
+    - tables/swe_basin_mean_values_table.csv
+    - tables/hs_basin_mean_values_table.csv
+    - tables/rof_basin_mean_values_table.csv
+
+Outputs:
+    - tables/{catchment_code}_current.txt  (per-catchment time series)
+    - tables/{basin_name}_current.txt  (per-basin time series)
+
+Output format (tab-separated):
+    date, Q5_SWE, Q5_HS, Q5_ROF, Q50_SWE, Q50_HS, Q50_ROF, Q95_SWE, Q95_HS, Q95_ROF, FC
+
+Usage:
+    python zonal_stats.py
+
+Note: Reads paths from snowmapper.yml or uses defaults.
+"""
 import pandas as pd
 import numpy as np
 import os

@@ -1,4 +1,27 @@
-# redone merge routine to make more rubust
+"""
+ERA5 Climate Data Downloader and Merger for SnowMapper.
+
+Downloads ERA5 reanalysis data from Copernicus Climate Data Store (CDS),
+checks for missing days, and merges with IFS forecast data to create
+continuous climate forcing files.
+
+Inputs:
+    - Domain config.yml with climate paths and spatial extent
+    - ERA5 data from CDS (requires ~/.cdsapirc credentials)
+    - IFS forecast files from fetch_ifs_forecast.py
+
+Outputs:
+    - inputs/climate/forecast/PLEV_YYYYMMDD.nc  (daily ERA5 pressure levels)
+    - inputs/climate/forecast/SURF_YYYYMMDD.nc  (daily ERA5 surface)
+    - inputs/climate/PLEV_final_merged_output.nc  (merged ERA5 + forecast)
+    - inputs/climate/SURF_final_merged_output.nc  (merged ERA5 + forecast)
+
+Usage:
+    python download_era5.py <domain_path>
+
+Example:
+    python download_era5.py ./domains/D2000
+"""
 
 import os
 import sys
