@@ -2,7 +2,7 @@
 Basin Statistics Calculator for SnowMapper.
 
 Computes mean values of SWE, HS, and ROF for each basin/catchment polygon
-using exactextract for fast zonal statistics.
+using rasterstats for fast zonal statistics. Processes variables in parallel.
 
 Inputs:
     - spatial/SWE_YYYYMMDD.nc  (reprojected SWE rasters)
@@ -28,6 +28,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import glob
+import concurrent.futures
 from datetime import datetime
 from tqdm import tqdm
 from rasterstats import zonal_stats
@@ -168,35 +169,59 @@ def process_variable(variable, polygons, directory, tables_dir, year, id_column,
 
 
 # ===============================================================================
-# Process all variables
+# Process all variables in parallel using multiprocessing
 # ===============================================================================
 
-logger.info("Processing basin-level statistics...")
+def process_variable_task(args):
+    """Worker function for multiprocessing - processes one variable at one level."""
+    variable, shapefile_path, directory, tables_dir, year, id_column, output_prefix, is_basin = args
 
-# Basin level (grouped by REGION)
-for variable in ["SWE", "HS", "ROF"]:
-    results_df = process_variable(variable, polygons, directory, tables_dir, year, "REGION", "Basin")
+    # Each worker loads its own copy of polygons (required for multiprocessing)
+    polygons = gpd.read_file(shapefile_path)
+    if polygons.crs is None:
+        polygons = polygons.set_crs("EPSG:4326")
+    elif polygons.crs.to_epsg() != 4326:
+        polygons = polygons.to_crs("EPSG:4326")
 
-    if results_df is not None:
+    results_df = process_variable(variable, polygons, directory, tables_dir, year, id_column, output_prefix)
+
+    if results_df is None:
+        return None
+
+    if is_basin:
         # Group columns by their names and calculate the average (for duplicate regions)
         date_column = results_df['Date']
         df_no_date = results_df.drop(columns=['Date'])
         averages = df_no_date.T.groupby(df_no_date.columns).mean().T
         out = pd.concat([date_column, averages], axis=1)
-
         output_file = os.path.join(tables_dir, f"{variable.lower()}_basin_mean_values_table.csv")
         out.to_csv(output_file, index=False)
-        logger.info(f"Saved {variable.lower()}_basin_mean_values_table.csv")
-
-logger.info("Processing catchment-level statistics...")
-
-# Catchment level (by CODE)
-for variable in ["SWE", "HS", "ROF"]:
-    results_df = process_variable(variable, polygons, directory, tables_dir, year, "CODE", "Catchment")
-
-    if results_df is not None:
+        return f"{variable.lower()}_basin_mean_values_table.csv"
+    else:
         output_file = os.path.join(tables_dir, f"{variable.lower()}_mean_values_table.csv")
         results_df.to_csv(output_file, index=False)
-        logger.info(f"Saved {variable.lower()}_mean_values_table.csv")
+        return f"{variable.lower()}_mean_values_table.csv"
 
-logger.info(f"Completed in {datetime.now() - startTime}")
+
+if __name__ == "__main__":
+    variables = ["SWE", "HS", "ROF"]
+
+    # Build task list: 3 basin + 3 catchment = 6 tasks
+    tasks = []
+    for var in variables:
+        tasks.append((var, shapefile_path, directory, tables_dir, year, "REGION", "Basin", True))
+    for var in variables:
+        tasks.append((var, shapefile_path, directory, tables_dir, year, "CODE", "Catchment", False))
+
+    # Process all 6 tasks in parallel using multiprocessing (true parallelism)
+    logger.info("Processing basin and catchment statistics in parallel (6 workers)...")
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(process_variable_task, task): task[0] for task in tasks}
+
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            if result:
+                logger.info(f"Saved {result}")
+
+    logger.info(f"Completed in {datetime.now() - startTime}")
