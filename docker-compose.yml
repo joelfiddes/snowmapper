@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  snowmapper:
+    build: .
+    image: snowmapper:latest
+    container_name: snowmapper
+
+    volumes:
+      # Mount simulation directory
+      - ${SNOWMAPPER_DATA:-./data}:/data
+
+      # Mount AWS credentials (for uploads)
+      - ~/.aws:/home/mambauser/.aws:ro
+
+    environment:
+      - SNOWMAPPER_LOG_LEVEL=${SNOWMAPPER_LOG_LEVEL:-INFO}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-eu-central-1}
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+        reservations:
+          memory: 8G
+
+    # Keep container running for manual execution
+    # command: tail -f /dev/null
+
+    # Or run full pipeline
+    # command: bash /data/run_2000.sh
+
+  # Optional: scheduled runs with ofelia
+  scheduler:
+    image: mcuadros/ofelia:latest
+    container_name: snowmapper-scheduler
+    depends_on:
+      - snowmapper
+    command: daemon --docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      ofelia.job-run.snowmapper-daily.schedule: "0 6 * * *"  # 6 AM UTC daily
+      ofelia.job-run.snowmapper-daily.container: "snowmapper"
+      ofelia.job-run.snowmapper-daily.command: "bash /data/run_2000.sh"

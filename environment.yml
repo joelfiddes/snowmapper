@@ -1,0 +1,45 @@
+name: snowmapper
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # Core Python
+  - python=3.11
+
+  # Climate/Geospatial
+  - xarray
+  - netcdf4
+  - h5netcdf
+  - cftime
+  - rasterio
+  - rioxarray
+  - geopandas
+  - pyproj
+  - shapely
+
+  # Data processing
+  - numpy
+  - pandas
+  - scipy
+  - dask
+  - bottleneck
+
+  # Visualization
+  - matplotlib
+
+  # AWS
+  - boto3
+
+  # Progress bars & logging
+  - tqdm
+
+  # Climate tools (non-Python)
+  - cdo
+  - eccodes
+
+  # ECMWF data access
+  - pip
+  - pip:
+    - ecmwf-opendata
+    - TopoPyScale
+    - munch

@@ -1,0 +1,54 @@
+# SnowMapper Operational Configuration
+# Copy this template to your simulation directory and customize
+
+project:
+  name: my_snowmapper_run
+  description: Snow Forecasting Project
+
+paths:
+  snowmapper_scripts: /path/to/snowmapper  # Path to snowmapper repo
+  climate_dir: ./inputs/climate
+  basins_dir: ./inputs/basins
+  spatial_dir: ./spatial
+  tables_dir: ./tables
+  logs_dir: ./logs
+
+domains:
+  - name: D2000
+    path: ./domains/D2000
+    enabled: true
+    n_clusters: 2000
+  # Add more domains as needed:
+  # - name: D500
+  #   path: ./domains/D500
+  #   enabled: false
+  #   n_clusters: 500
+
+climate:
+  era5_latency_days: 5      # Expected ERA5 delay from present
+  forecast_days: 10         # IFS forecast horizon
+  gap_fill_max_days: 3      # Max days to backfill from IFS
+
+simulation:
+  lookback_days: 7          # Days to re-simulate in forecast run
+  water_year_start_month: 9 # September = start of water year
+
+outputs:
+  variables: [SWE, HS, ROF, GST]
+  reproject_crs: EPSG:4326
+
+upload:
+  enabled: false
+  s3_bucket: snow-model-data-source
+
+logging:
+  level: INFO               # DEBUG, INFO, WARNING, ERROR
+  rotate_mb: 10
+  backup_count: 5
+
+# Pipeline step control
+pipeline:
+  skip_fetch_ifs: false     # Skip IFS forecast download
+  skip_download_era5: false # Skip ERA5 download
+  skip_init_if_archive_exists: true
+  skip_upload: true         # Controlled by upload.enabled

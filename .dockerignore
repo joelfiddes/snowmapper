@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Data files (mount as volume instead)
+*.nc
+*.tif
+*.csv
+inputs/
+outputs/
+logs/
+sim_*/
+
+# Documentation
+*.md
+docs/
+
+# Tests
+tests/
+test_*.py
+
+# Large files
+*.grib2
+*.zip
+*.tar.gz
