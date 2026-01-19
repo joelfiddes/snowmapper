@@ -2,19 +2,23 @@
 Upload forecast bundle to S3.
 
 Usage:
-    python upload_to_AWS_offline_Forecast.py <date> [--bundle] [--days N]
+    python upload_to_AWS_offline_Forecast.py <start_date> [end_date] [--bundle] [--days N]
 
 Arguments:
-    date        Date in YYYYMMDD format (e.g., 20260119)
+    start_date  Start date in YYYYMMDD format (e.g., 20260119)
+    end_date    Optional end date - processes all dates in range (inclusive)
     --bundle    Create bundle from spatial/*.nc files before uploading
                 Without this flag, uploads existing bundle files directly
-    --days N    Number of days to include in bundle (default: 10)
+    --days N    Number of days to include in each bundle (default: 10)
 
 Examples:
-    # Bundle 10 forecast days and upload (default)
+    # Single date: bundle 10 forecast days and upload
     python upload_to_AWS_offline_Forecast.py 20260119 --bundle
 
-    # Bundle 5 days and upload
+    # Date range: process multiple dates
+    python upload_to_AWS_offline_Forecast.py 20260110 20260119 --bundle
+
+    # Bundle 5 days per date
     python upload_to_AWS_offline_Forecast.py 20260119 --bundle --days 5
 
     # Upload existing bundle files (no bundling)
@@ -36,7 +40,8 @@ if len(sys.argv) < 2:
     print(__doc__)
     sys.exit(1)
 
-formatted_date = sys.argv[1]
+# Separate positional args from flags
+positional_args = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
 do_bundle = '--bundle' in sys.argv
 
 # Parse --days argument (default: 10)
@@ -49,12 +54,28 @@ if '--days' in sys.argv:
         print("ERROR: --days requires a number (e.g., --days 10)")
         sys.exit(1)
 
-# Validate date format
+# Parse start and optional end date
+start_date_str = positional_args[0]
+end_date_str = positional_args[1] if len(positional_args) > 1 else start_date_str
+
+# Validate date formats
 try:
-    datetime.strptime(formatted_date, "%Y%m%d")
-except ValueError:
-    print(f"ERROR: Invalid date format '{formatted_date}'. Use YYYYMMDD (e.g., 20260119)")
+    start_dt = datetime.strptime(start_date_str, "%Y%m%d")
+    end_dt = datetime.strptime(end_date_str, "%Y%m%d")
+except ValueError as e:
+    print(f"ERROR: Invalid date format. Use YYYYMMDD (e.g., 20260119)")
     sys.exit(1)
+
+if end_dt < start_dt:
+    print(f"ERROR: End date {end_date_str} is before start date {start_date_str}")
+    sys.exit(1)
+
+# Generate list of dates to process
+dates_to_process = []
+current_dt = start_dt
+while current_dt <= end_dt:
+    dates_to_process.append(current_dt.strftime("%Y%m%d"))
+    current_dt += pd.Timedelta(days=1)
 
 # AWS setup
 session = boto3.Session()
@@ -168,21 +189,30 @@ def upload_parameter(parameter, formatted_date, do_bundle, directory, max_days=1
 
 # Main execution
 print(f"{'='*60}")
-print(f"Forecast Upload: {formatted_date}")
+print(f"Forecast Upload")
+print(f"Dates: {start_date_str} to {end_date_str} ({len(dates_to_process)} dates)")
 print(f"Mode: {'Bundle + Upload' if do_bundle else 'Upload existing'}")
 if do_bundle:
-    print(f"Days: {max_days}")
+    print(f"Days per bundle: {max_days}")
 print(f"{'='*60}")
 
-results = {}
-for param in ['SWE', 'HS', 'ROF']:
-    print(f"\n--- {param} ---")
-    results[param] = upload_parameter(param, formatted_date, do_bundle, spatial_directory, max_days)
+all_results = {}
+for formatted_date in dates_to_process:
+    print(f"\n{'='*60}")
+    print(f"Processing: {formatted_date}")
+    print(f"{'='*60}")
+
+    results = {}
+    for param in ['SWE', 'HS', 'ROF']:
+        print(f"\n--- {param} ---")
+        results[param] = upload_parameter(param, formatted_date, do_bundle, spatial_directory, max_days)
+    all_results[formatted_date] = results
 
 # Summary
 print(f"\n{'='*60}")
-print("Summary:")
-for param, success in results.items():
-    status = "OK" if success else "FAILED"
-    print(f"  {param}: {status}")
+print("SUMMARY")
+print(f"{'='*60}")
+for date, results in all_results.items():
+    statuses = [f"{p}:{'OK' if s else 'FAIL'}" for p, s in results.items()]
+    print(f"  {date}: {', '.join(statuses)}")
 print(f"{'='*60}")
