@@ -2,9 +2,10 @@
 Upload forecast bundle to S3.
 
 Usage:
-    python upload_to_AWS_offline_Forecast.py <start_date> [end_date] [--bundle] [--days N]
+    python upload_to_AWS_offline_Forecast.py <spatial_dir> <start_date> [end_date] [--bundle] [--days N]
 
 Arguments:
+    spatial_dir Absolute path to spatial directory containing NC files
     start_date  Start date in YYYYMMDD format (e.g., 20260119)
     end_date    Optional end date - processes all dates in range (inclusive)
     --bundle    Create bundle from spatial/*.nc files before uploading
@@ -13,16 +14,16 @@ Arguments:
 
 Examples:
     # Single date: bundle 10 forecast days and upload
-    python upload_to_AWS_offline_Forecast.py 20260119 --bundle
+    python upload_to_AWS_offline_Forecast.py /home/ubuntu/sim/snowmapper/spatial 20260119 --bundle
 
     # Date range: process multiple dates
-    python upload_to_AWS_offline_Forecast.py 20260110 20260119 --bundle
+    python upload_to_AWS_offline_Forecast.py /home/ubuntu/sim/snowmapper/spatial 20260110 20260119 --bundle
 
     # Bundle 5 days per date
-    python upload_to_AWS_offline_Forecast.py 20260119 --bundle --days 5
+    python upload_to_AWS_offline_Forecast.py /home/ubuntu/sim/snowmapper/spatial 20260119 --bundle --days 5
 
     # Upload existing bundle files (no bundling)
-    python upload_to_AWS_offline_Forecast.py 20260119
+    python upload_to_AWS_offline_Forecast.py /home/ubuntu/sim/snowmapper/spatial 20260119
 """
 import os
 import sys
@@ -36,12 +37,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import s3_utils as s3
 
 # Parse arguments
-if len(sys.argv) < 2:
+if len(sys.argv) < 3:
     print(__doc__)
     sys.exit(1)
 
-# Separate positional args from flags
-positional_args = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
+# Separate positional args from flags (skip args that follow --days)
+positional_args = []
+skip_next = False
+for i, arg in enumerate(sys.argv[1:], 1):
+    if skip_next:
+        skip_next = False
+        continue
+    if arg == '--days':
+        skip_next = True
+        continue
+    if not arg.startswith('--'):
+        positional_args.append(arg)
+
 do_bundle = '--bundle' in sys.argv
 
 # Parse --days argument (default: 10)
@@ -54,9 +66,23 @@ if '--days' in sys.argv:
         print("ERROR: --days requires a number (e.g., --days 10)")
         sys.exit(1)
 
-# Parse start and optional end date
-start_date_str = positional_args[0]
-end_date_str = positional_args[1] if len(positional_args) > 1 else start_date_str
+# Parse spatial_dir, start_date, and optional end_date
+if len(positional_args) < 2:
+    print("ERROR: Must provide spatial_dir and start_date")
+    print(__doc__)
+    sys.exit(1)
+
+spatial_directory = positional_args[0]
+if not spatial_directory.endswith('/'):
+    spatial_directory += '/'
+
+# Validate spatial directory exists
+if not os.path.isdir(spatial_directory):
+    print(f"ERROR: Spatial directory not found: {spatial_directory}")
+    sys.exit(1)
+
+start_date_str = positional_args[1]
+end_date_str = positional_args[2] if len(positional_args) > 2 else start_date_str
 
 # Validate date formats
 try:
@@ -84,7 +110,6 @@ SNOW_MODEL = "joel-snow-model"
 SNOW_MODEL_BUCKET = "snow-model-data-source"
 aws_access_key_id = credentials.access_key
 aws_secret_access_key = credentials.secret_key
-spatial_directory = "./spatial/"
 
 
 def bundle_nc_files(directory, start_date, file_class, output_file, max_days=10):
@@ -190,6 +215,7 @@ def upload_parameter(parameter, formatted_date, do_bundle, directory, max_days=1
 # Main execution
 print(f"{'='*60}")
 print(f"Forecast Upload")
+print(f"Spatial dir: {spatial_directory}")
 print(f"Dates: {start_date_str} to {end_date_str} ({len(dates_to_process)} dates)")
 print(f"Mode: {'Bundle + Upload' if do_bundle else 'Upload existing'}")
 if do_bundle:
