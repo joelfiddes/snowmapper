@@ -182,7 +182,8 @@ def bundle_nc_files(directory, start_date, file_class, output_file, max_days=10)
 
 def upload_parameter(parameter, formatted_date, do_bundle, directory, max_days=10):
     """Upload a single parameter (SWE, HS, or ROF) to S3."""
-    output_filename_nc = f'{parameter}_{formatted_date}.nc'
+    # Save temp bundle in spatial directory (not cwd)
+    output_filename_nc = os.path.join(directory, f'{parameter}_{formatted_date}_bundle.nc')
 
     if do_bundle:
         # Bundle files from spatial directory
