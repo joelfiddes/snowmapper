@@ -2,16 +2,20 @@
 Upload forecast bundle to S3.
 
 Usage:
-    python upload_to_AWS_offline_Forecast.py <date> [--bundle]
+    python upload_to_AWS_offline_Forecast.py <date> [--bundle] [--days N]
 
 Arguments:
     date        Date in YYYYMMDD format (e.g., 20260119)
     --bundle    Create bundle from spatial/*.nc files before uploading
                 Without this flag, uploads existing bundle files directly
+    --days N    Number of days to include in bundle (default: 10)
 
 Examples:
-    # Bundle forecast files and upload
+    # Bundle 10 forecast days and upload (default)
     python upload_to_AWS_offline_Forecast.py 20260119 --bundle
+
+    # Bundle 5 days and upload
+    python upload_to_AWS_offline_Forecast.py 20260119 --bundle --days 5
 
     # Upload existing bundle files (no bundling)
     python upload_to_AWS_offline_Forecast.py 20260119
@@ -35,6 +39,16 @@ if len(sys.argv) < 2:
 formatted_date = sys.argv[1]
 do_bundle = '--bundle' in sys.argv
 
+# Parse --days argument (default: 10)
+max_days = 10
+if '--days' in sys.argv:
+    try:
+        days_idx = sys.argv.index('--days')
+        max_days = int(sys.argv[days_idx + 1])
+    except (IndexError, ValueError):
+        print("ERROR: --days requires a number (e.g., --days 10)")
+        sys.exit(1)
+
 # Validate date format
 try:
     datetime.strptime(formatted_date, "%Y%m%d")
@@ -52,7 +66,7 @@ aws_secret_access_key = credentials.secret_key
 spatial_directory = "./spatial/"
 
 
-def bundle_nc_files(directory, start_date, file_class, output_file):
+def bundle_nc_files(directory, start_date, file_class, output_file, max_days=10):
     """
     Bundle NetCDF files from start_date onwards into a single file with time dimension.
 
@@ -61,20 +75,22 @@ def bundle_nc_files(directory, start_date, file_class, output_file):
         start_date: Start date in YYYYMMDD format
         file_class: Variable name (SWE, HS, ROF)
         output_file: Output filename for bundled file
+        max_days: Maximum number of days to include (default: 10)
 
     Returns:
         int: Number of files bundled
     """
     files_on_or_after = []
     start_dt = datetime.strptime(start_date, "%Y%m%d")
+    end_dt = start_dt + pd.Timedelta(days=max_days - 1)  # inclusive
 
-    # Collect all files on or after the start date for the specified class
+    # Collect files within the date range for the specified class
     for file in os.listdir(directory):
         if file.startswith(file_class + '_') and file.endswith('.nc'):
             file_date_str = file.split('_')[1].replace('.nc', '')
             try:
                 file_date = datetime.strptime(file_date_str, "%Y%m%d")
-                if file_date >= start_dt:
+                if start_dt <= file_date <= end_dt:
                     files_on_or_after.append(file)
             except ValueError:
                 continue  # Skip files with invalid date format
@@ -118,13 +134,13 @@ def bundle_nc_files(directory, start_date, file_class, output_file):
     return len(files_on_or_after)
 
 
-def upload_parameter(parameter, formatted_date, do_bundle, directory):
+def upload_parameter(parameter, formatted_date, do_bundle, directory, max_days=10):
     """Upload a single parameter (SWE, HS, or ROF) to S3."""
     output_filename_nc = f'{parameter}_{formatted_date}.nc'
 
     if do_bundle:
         # Bundle files from spatial directory
-        n_files = bundle_nc_files(directory, formatted_date, parameter, output_filename_nc)
+        n_files = bundle_nc_files(directory, formatted_date, parameter, output_filename_nc, max_days)
         if n_files == 0:
             print(f"SKIP: No files to bundle for {parameter}")
             return False
@@ -154,12 +170,14 @@ def upload_parameter(parameter, formatted_date, do_bundle, directory):
 print(f"{'='*60}")
 print(f"Forecast Upload: {formatted_date}")
 print(f"Mode: {'Bundle + Upload' if do_bundle else 'Upload existing'}")
+if do_bundle:
+    print(f"Days: {max_days}")
 print(f"{'='*60}")
 
 results = {}
 for param in ['SWE', 'HS', 'ROF']:
     print(f"\n--- {param} ---")
-    results[param] = upload_parameter(param, formatted_date, do_bundle, spatial_directory)
+    results[param] = upload_parameter(param, formatted_date, do_bundle, spatial_directory, max_days)
 
 # Summary
 print(f"\n{'='*60}")
