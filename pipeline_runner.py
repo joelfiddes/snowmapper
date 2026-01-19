@@ -203,7 +203,12 @@ def main():
         if pipeline_cfg.get('skip_download_era5', False):
             p.skip("Download ERA5", "disabled in config")
         else:
-            p.run("Download ERA5", "download_era5.py")
+            # download_era5.py needs a domain path with config.yml
+            first_domain = p.get_domains()[0] if p.get_domains() else None
+            if first_domain:
+                p.run("Download ERA5", "download_era5.py", first_domain)
+            else:
+                p.skip("Download ERA5", "no domains configured")
 
         # Process each domain
         for domain in p.get_domains():
