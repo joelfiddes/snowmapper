@@ -846,7 +846,13 @@ def main():
 
     # Get latest available ERA5 date
     lastday = mp.get_lastday()
-    logger.info(f"Latest available ERA5 date: {lastday.strftime('%Y-%m-%d')}")
+    # Handle both string and datetime return types
+    if isinstance(lastday, str):
+        lastday_str = lastday
+        lastday = datetime.strptime(lastday, '%Y-%m-%d')
+    else:
+        lastday_str = lastday.strftime('%Y-%m-%d')
+    logger.info(f"Latest available ERA5 date: {lastday_str}")
 
     # Check for and download any missing ERA5 days
     missing_days = get_missing_era5_days(str(mp.config.climate.path), lastday)
