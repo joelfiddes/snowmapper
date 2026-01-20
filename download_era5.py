@@ -782,50 +782,69 @@ import xarray as xr
 
 def merge_climate_files3(data_dir, prefix, output_file):
     """
-    Merge ERA5 and forecast files using CDO (low memory, fast).
+    Merge ERA5 and forecast files using hybrid CDO + xarray approach.
 
-    Priority: ERA5 > daily forecast > continuous forecast
-    (Daily forecasts are archived when ERA5 arrives, so minimal overlap)
+    Step 1: CDO merges ERA5 files (fast, low memory, consistent format)
+    Step 2: xarray combines with forecast (handles variable differences)
 
-    Uses ~200-400MB RAM instead of ~8GB with xarray.
+    Uses ~1GB RAM instead of ~8GB with pure xarray.
     """
     import subprocess
+    import tempfile
     data_dir = Path(data_dir)
 
-    # Collect files in priority order (first occurrence wins in mergetime)
-    files_to_merge = []
-
-    # 1. ERA5 files first (highest priority)
+    # 1. Merge ERA5 files with CDO (they have consistent format)
     era5_files = sorted(data_dir.glob(f"{prefix}_20*.nc"))
     if not era5_files:
         raise FileNotFoundError(f"No ERA5 files found matching {prefix}_20*.nc in {data_dir}")
-    files_to_merge.extend([str(f) for f in era5_files])
     logger.info(f"Found {len(era5_files)} ERA5 files")
 
-    # 2. Daily forecast files (gap-fill, should be minimal if ERA5 archiving works)
-    fc_daily_files = sorted(data_dir.glob(f"{prefix}_FC_20*.nc"))
-    if fc_daily_files:
-        files_to_merge.extend([str(f) for f in fc_daily_files])
-        logger.info(f"Found {len(fc_daily_files)} daily forecast files")
+    # Create temp file for ERA5 merge
+    era5_merged = tempfile.NamedTemporaryFile(suffix='.nc', delete=False).name
 
-    # 3. Continuous forecast (extends into future)
-    fc_cont_file = data_dir / f"{prefix}_FC.nc"
-    if fc_cont_file.exists():
-        files_to_merge.append(str(fc_cont_file))
-        logger.info(f"Found continuous forecast: {fc_cont_file.name}")
-    else:
-        logger.warning(f"No continuous forecast file found: {fc_cont_file}")
-
-    # Merge with CDO (streaming, low memory)
-    # mergetime keeps first occurrence for duplicate times
-    cmd = ["cdo", "-O", "mergetime"] + files_to_merge + [str(output_file)]
-    logger.info(f"Merging {len(files_to_merge)} files with CDO...")
-
+    cmd = ["cdo", "-O", "mergetime"] + [str(f) for f in era5_files] + [era5_merged]
+    logger.info(f"Merging ERA5 files with CDO...")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        logger.error(f"CDO merge failed: {result.stderr}")
+        logger.error(f"CDO ERA5 merge failed: {result.stderr}")
         raise RuntimeError(f"CDO mergetime failed: {result.stderr}")
 
+    # 2. Check for forecast files
+    fc_cont_file = data_dir / f"{prefix}_FC.nc"
+    fc_daily_files = sorted(data_dir.glob(f"{prefix}_FC_20*.nc"))
+
+    if not fc_cont_file.exists() and not fc_daily_files:
+        # No forecast files, just rename ERA5 merged
+        os.rename(era5_merged, output_file)
+        logger.info(f"Created merged file (ERA5 only): {output_file}")
+        return
+
+    # 3. Combine ERA5 with forecasts using xarray (handles variable differences)
+    logger.info("Combining ERA5 with forecast files using xarray...")
+
+    # Load ERA5 merged
+    ds_era5 = xr.open_dataset(era5_merged)
+
+    # Load and combine daily forecasts if any
+    if fc_daily_files:
+        logger.info(f"Found {len(fc_daily_files)} daily forecast files")
+        ds_fc_daily = xr.open_mfdataset(fc_daily_files, combine="by_coords")
+        ds_era5 = ds_era5.combine_first(ds_fc_daily)
+        ds_fc_daily.close()
+
+    # Load and combine continuous forecast
+    if fc_cont_file.exists():
+        logger.info(f"Found continuous forecast: {fc_cont_file.name}")
+        ds_fc_cont = xr.open_dataset(fc_cont_file)
+        ds_era5 = ds_era5.combine_first(ds_fc_cont)
+        ds_fc_cont.close()
+
+    # Save final merged file
+    ds_era5.to_netcdf(output_file)
+    ds_era5.close()
+
+    # Clean up temp file
+    os.remove(era5_merged)
     logger.info(f"Created merged file: {output_file}")
 
 
