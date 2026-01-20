@@ -88,6 +88,22 @@ class Pipeline:
         mins, secs = divmod(int(seconds), 60)
         return f"{mins}m {secs:02d}s"
 
+    def _clear_swap(self):
+        """Clear swap to free memory between modules (requires sudo)."""
+        if not self.cfg.get('pipeline', {}).get('clear_swap', False):
+            return
+        try:
+            subprocess.run(
+                ["sudo", "swapoff", "-a"],
+                capture_output=True, timeout=60
+            )
+            subprocess.run(
+                ["sudo", "swapon", "-a"],
+                capture_output=True, timeout=60
+            )
+        except Exception:
+            pass  # Silently ignore if swap clearing fails
+
     def _print_summary(self):
         lines = []
         lines.append("=" * 58)
@@ -142,6 +158,7 @@ class Pipeline:
             duration = time.time() - start
             self._log(f"DONE  | {name} ({int(duration)}s)")
             self.steps.append((name, "completed", duration))
+            self._clear_swap()
             return True
 
         except subprocess.CalledProcessError as e:
