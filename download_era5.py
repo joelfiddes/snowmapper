@@ -781,51 +781,52 @@ import pandas as pd
 import xarray as xr
 
 def merge_climate_files3(data_dir, prefix, output_file):
+    """
+    Merge ERA5 and forecast files using CDO (low memory, fast).
+
+    Priority: ERA5 > daily forecast > continuous forecast
+    (Daily forecasts are archived when ERA5 arrives, so minimal overlap)
+
+    Uses ~200-400MB RAM instead of ~8GB with xarray.
+    """
+    import subprocess
     data_dir = Path(data_dir)
 
-    # 1. ERA5 hourly reanalysis
+    # Collect files in priority order (first occurrence wins in mergetime)
+    files_to_merge = []
+
+    # 1. ERA5 files first (highest priority)
     era5_files = sorted(data_dir.glob(f"{prefix}_20*.nc"))
     if not era5_files:
-        raise FileNotFoundError("No ERA5 files found")
-    ds_era5 = xr.open_mfdataset(era5_files, combine="by_coords")
-    ref_lat = ds_era5.latitude
-    ref_lon = ds_era5.longitude
+        raise FileNotFoundError(f"No ERA5 files found matching {prefix}_20*.nc in {data_dir}")
+    files_to_merge.extend([str(f) for f in era5_files])
+    logger.info(f"Found {len(era5_files)} ERA5 files")
 
-    # 2. Find gaps in ERA5 coverage
-    era5_times = pd.to_datetime(ds_era5.time.values)
-    expected_times = pd.date_range(start=era5_times.min(), end=era5_times.max(), freq="H")
-    missing_times = set(expected_times) - set(era5_times)
-
-    # 3. Single-day forecasts (only where ERA5 is missing)
+    # 2. Daily forecast files (gap-fill, should be minimal if ERA5 archiving works)
     fc_daily_files = sorted(data_dir.glob(f"{prefix}_FC_20*.nc"))
-    selected_fc_files = []
-    for f in fc_daily_files:
-        m = re.search(r"(\d{4}-\d{2}-\d{2})", f.name)
-        if m:
-            file_date = pd.to_datetime(m.group(1))
-            hours = pd.date_range(file_date, file_date + pd.Timedelta("23H"), freq="H")
-            if any(h in missing_times for h in hours):
-                selected_fc_files.append(f)
+    if fc_daily_files:
+        files_to_merge.extend([str(f) for f in fc_daily_files])
+        logger.info(f"Found {len(fc_daily_files)} daily forecast files")
 
-    ds_fc_daily = None
-    if selected_fc_files:
-        ds_fc_daily = xr.open_mfdataset(selected_fc_files, combine="by_coords")
-        ds_fc_daily = ds_fc_daily.interp(latitude=ref_lat, longitude=ref_lon)
-
-    # 4. Continuous forecast
+    # 3. Continuous forecast (extends into future)
     fc_cont_file = data_dir / f"{prefix}_FC.nc"
-    ds_fc_cont = xr.open_dataset(fc_cont_file)
-    ds_fc_cont = ds_fc_cont.interp(latitude=ref_lat, longitude=ref_lon)
+    if fc_cont_file.exists():
+        files_to_merge.append(str(fc_cont_file))
+        logger.info(f"Found continuous forecast: {fc_cont_file.name}")
+    else:
+        logger.warning(f"No continuous forecast file found: {fc_cont_file}")
 
-    # 5. Merge with priority: ERA5 > daily forecast > continuous forecast
-    ds_base = ds_era5
-    if ds_fc_daily is not None:
-        ds_base = ds_base.combine_first(ds_fc_daily)
-    ds_merged = ds_base.combine_first(ds_fc_cont)
+    # Merge with CDO (streaming, low memory)
+    # mergetime keeps first occurrence for duplicate times
+    cmd = ["cdo", "-O", "mergetime"] + files_to_merge + [str(output_file)]
+    logger.info(f"Merging {len(files_to_merge)} files with CDO...")
 
-    # 6. Save
-    ds_merged.to_netcdf(output_file)
-    return ds_merged
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        logger.error(f"CDO merge failed: {result.stderr}")
+        raise RuntimeError(f"CDO mergetime failed: {result.stderr}")
+
+    logger.info(f"Created merged file: {output_file}")
 
 
 
